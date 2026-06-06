@@ -53,8 +53,6 @@ export default function Diagnose() {
 
   useEffect(() => {
     fetchHealth();
-    const interval = setInterval(fetchHealth, 10000);
-    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
