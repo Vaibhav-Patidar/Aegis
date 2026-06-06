@@ -1,0 +1,1251 @@
+[
+  {
+    "id": "AUTH-001",
+    "incident_id": "INC-4421",
+    "service_name": "auth-service",
+    "alert_text": "JWT token validation returning 401 on all requests post-deploy. Error: invalid signature, algorithm mismatch RS256/HS256",
+    "root_cause": "Dependency upgrade to jsonwebtoken v9.0 changed default signing algorithm from RS256 to HS256. All tokens signed with RS256 private key are now rejected during validation.",
+    "resolution_steps": [
+      "Rollback jsonwebtoken dependency to v8.5.1 in package.json",
+      "Run npm install and redeploy auth-service",
+      "Verify token validation passing with curl against /auth/verify endpoint",
+      "Pin jsonwebtoken version in package-lock.json and document in CHANGELOG"
+    ],
+    "time_to_resolve_mins": 14,
+    "severity": "CRITICAL",
+    "timestamp": "2025-12-03T02:17:00Z",
+    "tags": [
+      "jwt",
+      "auth",
+      "dependency-upgrade",
+      "algorithm-mismatch"
+    ],
+    "post_mortem_summary": "A minor version bump to jsonwebtoken silently changed the default signing algorithm, invalidating all active sessions for 14 minutes. Algorithm must now be explicitly declared in signing config and validated in CI before deployment."
+  },
+  {
+    "id": "PAY-002",
+    "incident_id": "INC-7813",
+    "service_name": "payments-api",
+    "alert_text": "Postgres connection pool exhausted. Error: remaining connection slots are reserved for non-replication superuser connections. max_connections=100 active=100",
+    "root_cause": "Slow query in settlements table missing index on created_at column causing full table scans. Each scan held a connection open for 45+ seconds, exhausting the pool under normal traffic.",
+    "resolution_steps": [
+      "Run EXPLAIN ANALYZE on the slow settlement query to confirm missing index",
+      "Execute CREATE INDEX CONCURRENTLY idx_settlements_created_at ON settlements(created_at)",
+      "Restart payments-api pods to clear stale connection pool",
+      "Increase pgbouncer pool_size from 20 to 35 as short-term mitigation",
+      "Add query timeout of 30s to payments-api database config"
+    ],
+    "time_to_resolve_mins": 31,
+    "severity": "HIGH",
+    "timestamp": "2025-12-08T14:42:00Z",
+    "tags": [
+      "postgres",
+      "connection-pool",
+      "slow-query",
+      "missing-index"
+    ],
+    "post_mortem_summary": "A missing index on the settlements table caused unbounded full table scans that held connections open and exhausted the pool during a traffic spike. Index creation and connection timeout policies are now enforced via pre-deploy schema review checklist."
+  },
+  {
+    "id": "CACHE-003",
+    "incident_id": "INC-3367",
+    "service_name": "session-store",
+    "alert_text": "Redis OOM condition reached. All write commands returning COMMAND_DENIED. Used memory: 4.00GB / 4.00GB. maxmemory-policy: noeviction",
+    "root_cause": "Redis maxmemory-policy was set to noeviction after a config migration 6 weeks prior. Session keys accumulated without TTL enforcement, filling memory completely.",
+    "resolution_steps": [
+      "Connect to Redis CLI and run CONFIG SET maxmemory-policy allkeys-lru",
+      "Increase maxmemory to 6gb via CONFIG SET maxmemory 6gb",
+      "Verify writes succeeding with redis-cli SET test val EX 60",
+      "Update redis.conf in Helm chart values to persist policy change across restarts",
+      "Add memory utilization alert at 75% threshold in Datadog"
+    ],
+    "time_to_resolve_mins": 22,
+    "severity": "HIGH",
+    "timestamp": "2025-11-19T03:08:00Z",
+    "tags": [
+      "redis",
+      "oom",
+      "session",
+      "eviction-policy",
+      "memory"
+    ],
+    "post_mortem_summary": "A configuration migration silently set Redis eviction policy to noeviction, allowing memory to fill completely over six weeks. All Redis deployments now enforce allkeys-lru by default with memory alerts at 75% and 90% thresholds."
+  },
+  {
+    "id": "QUEUE-004",
+    "incident_id": "INC-5502",
+    "service_name": "notification-worker",
+    "alert_text": "SQS consumer lag spiking. Queue depth: 48,291 messages. Oldest message age: 47m. Worker throughput dropped from 1200/min to 38/min",
+    "root_cause": "Worker thread pool size was hard-coded to 4 threads in application config. A Black Friday traffic spike increased message volume 30x, requiring 120+ concurrent threads to maintain SLA.",
+    "resolution_steps": [
+      "Update WORKER_CONCURRENCY env var from 4 to 40 in ECS task definition",
+      "Deploy updated task definition and force new service deployment",
+      "Monitor queue depth in CloudWatch \u2014 confirm draining at expected rate",
+      "Set up auto-scaling policy on ECS service based on SQS ApproximateNumberOfMessages",
+      "Add circuit breaker for downstream email provider to prevent cascade on retry storms"
+    ],
+    "time_to_resolve_mins": 47,
+    "severity": "MEDIUM",
+    "timestamp": "2025-11-28T18:31:00Z",
+    "tags": [
+      "sqs",
+      "worker",
+      "concurrency",
+      "queue-lag",
+      "black-friday"
+    ],
+    "post_mortem_summary": "Hard-coded thread pool sizing caused the notification worker to fall 48k messages behind during a traffic spike. Concurrency is now driven by an environment variable with auto-scaling tied directly to queue depth metrics."
+  },
+  {
+    "id": "API-005",
+    "incident_id": "INC-9901",
+    "service_name": "api-gateway",
+    "alert_text": "P99 latency on /checkout endpoint hitting 8200ms. Upstream timeout errors increasing. Error rate 23%. Normal P99 baseline: 180ms",
+    "root_cause": "Downstream tax-calculation service introduced a synchronous external API call to a third-party tax provider without a timeout. Under load, this call averaged 7.8s, blocking all checkout threads.",
+    "resolution_steps": [
+      "Add 2000ms timeout to tax-calc external API call in TaxService.java",
+      "Implement fallback to cached tax rates when external call times out",
+      "Deploy tax-service hotfix v2.4.1 to production",
+      "Confirm P99 returning to baseline in Grafana",
+      "Add latency SLO alert for /checkout endpoint at 500ms P99"
+    ],
+    "time_to_resolve_mins": 19,
+    "severity": "CRITICAL",
+    "timestamp": "2025-12-01T20:14:00Z",
+    "tags": [
+      "latency",
+      "timeout",
+      "checkout",
+      "third-party",
+      "p99"
+    ],
+    "post_mortem_summary": "A missing timeout on a synchronous third-party tax API call caused checkout P99 to spike to 8.2 seconds under normal load. All external service calls now require explicit timeouts and fallback strategies as part of code review policy."
+  },
+  {
+    "id": "DISK-006",
+    "incident_id": "INC-6644",
+    "service_name": "api-gateway",
+    "alert_text": "Host disk at 100%. Container OOMKilled. Log volume /var/log/nginx: 47GB. Log rotation last successful: never. Containers restarting every 90s",
+    "root_cause": "Log rotation was misconfigured after the last Helm chart upgrade. The logrotate configuration path changed from /etc/logrotate.d/nginx to /etc/logrotate.d/api-gateway but the cron job was not updated.",
+    "resolution_steps": [
+      "SSH to affected host and truncate largest log files: > /var/log/nginx/access.log",
+      "Fix logrotate config path in /etc/cron.d/logrotate",
+      "Run logrotate -f /etc/logrotate.d/api-gateway to verify rotation works",
+      "Update Helm chart values.yaml to set correct logrotate path",
+      "Add disk utilization alert at 80% threshold"
+    ],
+    "time_to_resolve_mins": 11,
+    "severity": "HIGH",
+    "timestamp": "2025-10-22T07:55:00Z",
+    "tags": [
+      "disk",
+      "log-rotation",
+      "nginx",
+      "helm",
+      "oomkilled"
+    ],
+    "post_mortem_summary": "A Helm chart upgrade silently broke the logrotate cron path, allowing nginx logs to accumulate 47GB over three weeks until the host disk filled completely. Log rotation configuration is now validated as part of the Helm upgrade checklist."
+  },
+  {
+    "id": "CERT-007",
+    "incident_id": "INC-1133",
+    "service_name": "api-gateway",
+    "alert_text": "SSL handshake failures on all HTTPS endpoints. Certificate expired 2025-10-15. cert-manager renewal job last success: 2025-07-15. Clients receiving ERR_CERT_DATE_INVALID",
+    "root_cause": "cert-manager ClusterIssuer was referencing a Let's Encrypt staging endpoint instead of production. Renewal attempts were succeeding against staging but issuing untrusted certificates that were silently discarded.",
+    "resolution_steps": [
+      "Update ClusterIssuer spec to use letsencrypt-prod ACME server URL",
+      "Delete and recreate the Certificate resource to force immediate renewal",
+      "Monitor cert-manager logs: kubectl logs -n cert-manager deploy/cert-manager",
+      "Confirm new certificate issued and loaded by nginx ingress",
+      "Add certificate expiry monitoring alert at 30 days and 7 days in Datadog"
+    ],
+    "time_to_resolve_mins": 8,
+    "severity": "CRITICAL",
+    "timestamp": "2025-10-16T09:02:00Z",
+    "tags": [
+      "ssl",
+      "certificate",
+      "cert-manager",
+      "letsencrypt",
+      "expiry"
+    ],
+    "post_mortem_summary": "cert-manager was silently renewing against the Let's Encrypt staging endpoint for 90 days, issuing untrusted certificates that were discarded, until the production certificate expired. Certificate validity is now checked by an external synthetic monitor every 6 hours."
+  },
+  {
+    "id": "SEARCH-008",
+    "incident_id": "INC-8820",
+    "service_name": "search-service",
+    "alert_text": "Elasticsearch cluster status RED. 4 of 12 shards unassigned. Search queries returning 503. Node heap usage: 94%. JVM GC pauses averaging 8s",
+    "root_cause": "Heap size was set to 2GB on a 16GB node, the Elasticsearch recommended 50% cap was never applied. GC pressure caused stop-the-world pauses, triggering master node to mark data nodes as failed.",
+    "resolution_steps": [
+      "Update JVM heap in elasticsearch.yml: -Xms8g -Xmx8g on all data nodes",
+      "Rolling restart data nodes one at a time to apply new heap settings",
+      "Force shard reallocation: PUT /_cluster/reroute?retry_failed=true",
+      "Monitor cluster health endpoint until status returns GREEN",
+      "Add JVM heap utilization alert at 75% in Kibana"
+    ],
+    "time_to_resolve_mins": 54,
+    "severity": "HIGH",
+    "timestamp": "2025-11-05T11:28:00Z",
+    "tags": [
+      "elasticsearch",
+      "heap",
+      "jvm",
+      "gc",
+      "shard-allocation"
+    ],
+    "post_mortem_summary": "Under-provisioned JVM heap caused cascading GC pressure that destabilized the Elasticsearch cluster and marked 4 shards unassigned. Heap sizing is now set to 50% of available node memory and validated during cluster provisioning."
+  },
+  {
+    "id": "REC-009",
+    "incident_id": "INC-2278",
+    "service_name": "recommendation-engine",
+    "alert_text": "Model inference latency degraded. P50 latency: 4200ms (baseline: 120ms). Feature store cache miss rate: 98%. Redis feature cache FLUSHALL detected in audit log at 14:32 UTC",
+    "root_cause": "A developer ran FLUSHALL on the production Redis instance while investigating a staging issue, mistakenly connecting to the production feature store endpoint stored in their shell history.",
+    "resolution_steps": [
+      "Trigger feature store cache warm-up job: kubectl create job --from=cronjob/feature-warmup manual-warmup",
+      "Monitor cache hit rate in Grafana \u2014 expect recovery to 85%+ within 8 minutes",
+      "Rotate Redis production credentials and remove from developer .env files",
+      "Add Redis ACL rules to block FLUSHALL/FLUSHDB from non-admin connections",
+      "Enforce separate environment credentials stored in 1Password vaults"
+    ],
+    "time_to_resolve_mins": 18,
+    "severity": "HIGH",
+    "timestamp": "2025-12-10T14:38:00Z",
+    "tags": [
+      "redis",
+      "flushall",
+      "feature-store",
+      "human-error",
+      "cache"
+    ],
+    "post_mortem_summary": "A developer accidentally flushed the production feature store Redis instance while targeting staging, causing 98% cache miss rate and 35x latency increase on recommendation inference. Production Redis credentials are now isolated per environment with FLUSHALL blocked via ACL."
+  },
+  {
+    "id": "INV-010",
+    "incident_id": "INC-3341",
+    "service_name": "inventory-db",
+    "alert_text": "Replication lag on read replica exceeding 4 minutes. replica_lag_seconds=247. Primary write throughput: 2400 TPS. Replica I/O thread: running. SQL thread: waiting",
+    "root_cause": "A bulk inventory update job ran during peak traffic, generating 2.4GB of binary log in 3 minutes. The replica SQL thread could not apply changes fast enough due to single-threaded replication on MySQL 5.7.",
+    "resolution_steps": [
+      "Set slave_parallel_workers=8 on replica to enable multi-threaded replication",
+      "Set slave_parallel_type=LOGICAL_CLOCK on replica",
+      "Restart replica SQL thread: STOP SLAVE SQL_THREAD; START SLAVE SQL_THREAD",
+      "Reschedule bulk inventory job to run during off-peak hours (02:00-04:00 UTC)",
+      "Add replica lag alert at 30 seconds in CloudWatch"
+    ],
+    "time_to_resolve_mins": 38,
+    "severity": "MEDIUM",
+    "timestamp": "2025-11-14T16:22:00Z",
+    "tags": [
+      "mysql",
+      "replication-lag",
+      "replica",
+      "bulk-job",
+      "parallel-replication"
+    ],
+    "post_mortem_summary": "Single-threaded replication on MySQL 5.7 could not keep pace with a peak-hours bulk inventory write job, causing the read replica to fall 4 minutes behind. Multi-threaded replication is now enabled and bulk jobs are scheduled outside peak traffic windows."
+  },
+  {
+    "id": "AUTH-011",
+    "incident_id": "INC-7720",
+    "service_name": "auth-service",
+    "alert_text": "OAuth2 token endpoint returning 500. Error: connection refused to Redis 10.0.4.22:6379. Token blacklist lookups failing. Redis pod in CrashLoopBackOff",
+    "root_cause": "Redis pod ran out of memory due to a missing resource limit in the Kubernetes deployment manifest. kubelet OOM-killed the container, triggering CrashLoopBackOff with exponential backoff.",
+    "resolution_steps": [
+      "Immediately add memory limit to Redis deployment: resources.limits.memory: 2Gi",
+      "kubectl rollout restart deployment/redis-token-blacklist",
+      "Verify Redis responding: redis-cli -h 10.0.4.22 ping",
+      "Confirm auth-service token endpoint returning 200",
+      "Add OOMKilled alert on all stateful workloads in cluster"
+    ],
+    "time_to_resolve_mins": 9,
+    "severity": "CRITICAL",
+    "timestamp": "2025-10-30T01:44:00Z",
+    "tags": [
+      "redis",
+      "oomkilled",
+      "kubernetes",
+      "resource-limits",
+      "oauth"
+    ],
+    "post_mortem_summary": "A missing memory resource limit allowed the Redis token blacklist pod to consume unbounded memory until kubelet killed it, taking down OAuth2 token validation. Resource limits are now required on all stateful workload manifests enforced by OPA policy."
+  },
+  {
+    "id": "PROD-012",
+    "incident_id": "INC-4489",
+    "service_name": "product-catalog",
+    "alert_text": "Product image CDN returning 404 for 34% of image requests. S3 bucket policy updated 2h ago. CloudFront returning AccessDenied from origin. Error count: 182,441/hr",
+    "root_cause": "An infrastructure engineer applied a restrictive S3 bucket policy that removed the CloudFront Origin Access Identity principal. CloudFront could no longer read objects from the S3 bucket.",
+    "resolution_steps": [
+      "Re-add CloudFront OAI principal to S3 bucket policy: arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity XXXXX",
+      "Invalidate CloudFront cache for /* to force fresh origin requests",
+      "Verify 200 responses on sample image URLs",
+      "Add S3 bucket policy change notification to security Slack channel",
+      "Tag S3 bucket with protected=true and add SCP to prevent OAI removal"
+    ],
+    "time_to_resolve_mins": 16,
+    "severity": "HIGH",
+    "timestamp": "2025-11-07T13:15:00Z",
+    "tags": [
+      "s3",
+      "cloudfront",
+      "cdn",
+      "bucket-policy",
+      "access-denied"
+    ],
+    "post_mortem_summary": "A manual S3 bucket policy update removed the CloudFront OAI principal, breaking image delivery for 34% of product catalog requests for 2 hours. S3 bucket policies for CDN origins are now protected via SCP and changes require peer review."
+  },
+  {
+    "id": "PAY-013",
+    "incident_id": "INC-6631",
+    "service_name": "payments-api",
+    "alert_text": "Stripe webhook processing failures. Error: HMAC signature verification failed. Webhook endpoint returning 400. Unprocessed events accumulating in Stripe dashboard: 2,341",
+    "root_cause": "Stripe webhook signing secret was rotated in Stripe dashboard by a developer testing a new integration, but the STRIPE_WEBHOOK_SECRET environment variable in ECS was not updated.",
+    "resolution_steps": [
+      "Retrieve new webhook signing secret from Stripe dashboard",
+      "Update STRIPE_WEBHOOK_SECRET in AWS Secrets Manager",
+      "Trigger ECS task refresh to pick up new secret value",
+      "Verify webhook signature validation passing with test event from Stripe CLI",
+      "Replay failed webhook events from Stripe dashboard for the affected window"
+    ],
+    "time_to_resolve_mins": 25,
+    "severity": "HIGH",
+    "timestamp": "2025-12-05T10:07:00Z",
+    "tags": [
+      "stripe",
+      "webhook",
+      "hmac",
+      "secret-rotation",
+      "payments"
+    ],
+    "post_mortem_summary": "A webhook signing secret rotation in Stripe was not propagated to the application environment, causing 2,341 payment events to fail validation over 90 minutes. Secret rotation runbooks now include a mandatory step to update and verify all dependent environment variables."
+  },
+  {
+    "id": "NOTIFY-014",
+    "incident_id": "INC-5517",
+    "service_name": "notification-worker",
+    "alert_text": "SendGrid API returning 429 Too Many Requests. Email delivery rate: 0. Retry queue depth: 91,000. X-RateLimit-Remaining: 0. Daily send limit reached at 11:42 UTC",
+    "root_cause": "A marketing bulk email job was triggered without a send-rate limiter. It consumed the entire 100,000/day SendGrid quota in 3.5 hours, blocking all transactional emails including order confirmations.",
+    "resolution_steps": [
+      "Pause marketing email campaign job immediately",
+      "Verify transactional email queue is isolated from marketing quota",
+      "Request SendGrid quota increase for marketing sub-account",
+      "Implement send-rate limiter: max 5,000 emails/hour for bulk campaigns",
+      "Separate marketing and transactional emails into different SendGrid sub-accounts"
+    ],
+    "time_to_resolve_mins": 142,
+    "severity": "HIGH",
+    "timestamp": "2025-11-25T12:18:00Z",
+    "tags": [
+      "sendgrid",
+      "rate-limit",
+      "email",
+      "quota",
+      "bulk-send"
+    ],
+    "post_mortem_summary": "A bulk marketing email job consumed the entire daily SendGrid quota in 3.5 hours, blocking all transactional emails until midnight UTC quota reset. Marketing and transactional email pipelines are now on separate SendGrid sub-accounts with independent quotas."
+  },
+  {
+    "id": "SEARCH-015",
+    "incident_id": "INC-8803",
+    "service_name": "search-service",
+    "alert_text": "Search index out of sync. Product count in search: 847,221. Product count in catalog DB: 1,204,883. New products added in last 72h not appearing in search results",
+    "root_cause": "Kafka consumer for the product-indexing topic had been in REBALANCING state for 72 hours due to a consumer group with one dead member that was never removed. The partition assignment was stuck.",
+    "resolution_steps": [
+      "Identify dead consumer: kafka-consumer-groups.sh --describe --group search-indexer",
+      "Remove dead member from consumer group and force rebalance",
+      "Verify consumer lag drops to 0 in Kafka UI",
+      "Trigger full re-index for 72-hour delta: POST /admin/reindex?since=72h",
+      "Add consumer group lag alert at >1000 messages in Prometheus"
+    ],
+    "time_to_resolve_mins": 67,
+    "severity": "MEDIUM",
+    "timestamp": "2025-11-11T09:33:00Z",
+    "tags": [
+      "kafka",
+      "consumer-group",
+      "rebalancing",
+      "search-index",
+      "sync"
+    ],
+    "post_mortem_summary": "A dead Kafka consumer member held a partition assignment for 72 hours without consuming, causing 357,662 products to be missing from search results. Consumer group health is now monitored with lag alerts and dead member cleanup runs on a 10-minute cron."
+  },
+  {
+    "id": "INV-016",
+    "incident_id": "INC-2295",
+    "service_name": "inventory-db",
+    "alert_text": "Deadlock detected on inventory_items table. Error: Deadlock found when trying to get lock; try restarting transaction. Frequency: 340 deadlocks/minute. Affecting: order placement flow",
+    "root_cause": "Two code paths \u2014 order placement and inventory reservation \u2014 were acquiring row locks on inventory_items in opposite order (order placement: lock by product_id then warehouse_id; reservation: warehouse_id then product_id).",
+    "resolution_steps": [
+      "Standardize lock acquisition order to always lock by product_id first across both code paths",
+      "Add SELECT ... FOR UPDATE SKIP LOCKED to reservation query to avoid blocking",
+      "Deploy hotfix to inventory-service and order-service simultaneously",
+      "Monitor deadlock frequency in MySQL performance_schema",
+      "Add deadlock rate alert above 10/minute"
+    ],
+    "time_to_resolve_mins": 43,
+    "severity": "HIGH",
+    "timestamp": "2025-12-12T15:49:00Z",
+    "tags": [
+      "mysql",
+      "deadlock",
+      "locking",
+      "inventory",
+      "order-placement"
+    ],
+    "post_mortem_summary": "Inconsistent lock acquisition order between two concurrent code paths caused 340 deadlocks per minute on the inventory table during peak order placement. Lock ordering is now enforced as a code review standard and tested via concurrent load scenarios in staging."
+  },
+  {
+    "id": "API-017",
+    "incident_id": "INC-9988",
+    "service_name": "api-gateway",
+    "alert_text": "nginx upstream keepalive connections exhausted. Error: no live upstreams while connecting to upstream. Worker connections: 1024/1024. Active connections dropping requests",
+    "root_cause": "A recent nginx config change set keepalive_timeout to 300s and keepalive_requests to 10000 per upstream connection, causing connections to stay open far longer than necessary and exhausting the worker connection pool.",
+    "resolution_steps": [
+      "Update nginx.conf: set keepalive_timeout 65s and keepalive_requests 100",
+      "Run nginx -t to validate config syntax",
+      "Reload nginx: nginx -s reload (no downtime)",
+      "Monitor active connections dropping below 800 in nginx status endpoint",
+      "Add nginx active connection alert at 900 connections"
+    ],
+    "time_to_resolve_mins": 7,
+    "severity": "HIGH",
+    "timestamp": "2025-10-18T22:11:00Z",
+    "tags": [
+      "nginx",
+      "keepalive",
+      "connections",
+      "upstream",
+      "config"
+    ],
+    "post_mortem_summary": "An overly aggressive nginx keepalive configuration kept upstream connections open for 5 minutes, exhausting the worker connection pool under normal traffic. Keepalive parameters are now tested under load in staging before any nginx config change is promoted."
+  },
+  {
+    "id": "PAY-018",
+    "incident_id": "INC-7744",
+    "service_name": "payments-api",
+    "alert_text": "Double-charge incident reported. Transaction IDs duplicated: TXN-8821, TXN-8822. Idempotency key collision detected. payments-api pod restarted mid-request at 09:14 UTC",
+    "root_cause": "Pod restart during payment processing caused the request to be retried by the API gateway without an idempotency key. The payment processor (Stripe) received two identical charge requests and processed both.",
+    "resolution_steps": [
+      "Immediately refund duplicate charges via Stripe dashboard for affected customers",
+      "Identify all transactions during pod restart window (09:12-09:16 UTC)",
+      "Enforce idempotency key generation at API gateway layer before forwarding to payments-api",
+      "Add Stripe idempotency key header to all charge requests using request UUID",
+      "Implement pre-charge deduplication check against Redis with 24h TTL"
+    ],
+    "time_to_resolve_mins": 92,
+    "severity": "CRITICAL",
+    "timestamp": "2025-11-22T09:14:00Z",
+    "tags": [
+      "idempotency",
+      "double-charge",
+      "stripe",
+      "pod-restart",
+      "payments"
+    ],
+    "post_mortem_summary": "A pod restart during an active payment request caused the API gateway to retry without an idempotency key, resulting in duplicate charges for 3 customers. Idempotency keys are now generated and enforced at the gateway layer for all payment requests."
+  },
+  {
+    "id": "AUTH-019",
+    "incident_id": "INC-3355",
+    "service_name": "auth-service",
+    "alert_text": "Rate limiter bypassed on /auth/login endpoint. Brute-force attempts detected: 48,000 requests/min from 230 IPs. Redis rate limit counter not incrementing. redis-rate-limiter pod: Pending",
+    "root_cause": "The redis-rate-limiter sidecar pod was in Pending state due to a node affinity rule that required a node label that no longer existed after a node group replacement.",
+    "resolution_steps": [
+      "Remove outdated node affinity rule from rate-limiter DaemonSet spec",
+      "kubectl rollout restart daemonset/redis-rate-limiter",
+      "Confirm rate limiter pods Running on all nodes",
+      "Apply temporary IP blocklist for the top 10 offending IP ranges via WAF",
+      "Add pod readiness check for rate-limiter sidecar in auth-service deployment health check"
+    ],
+    "time_to_resolve_mins": 21,
+    "severity": "HIGH",
+    "timestamp": "2025-12-09T04:52:00Z",
+    "tags": [
+      "rate-limiting",
+      "brute-force",
+      "kubernetes",
+      "node-affinity",
+      "security"
+    ],
+    "post_mortem_summary": "A node group replacement left the rate-limiter DaemonSet in Pending state for 4 hours before a brute-force attack revealed the gap. Node affinity rules are now tested after every infrastructure change and rate-limiter health is included in the auth-service readiness probe."
+  },
+  {
+    "id": "PROD-020",
+    "incident_id": "INC-4466",
+    "service_name": "product-catalog",
+    "alert_text": "Database migration running for 47 minutes. Table products locked. All catalog reads timing out. Migration: ALTER TABLE products ADD COLUMN search_vector tsvector. Row count: 4.2M",
+    "root_cause": "An ALTER TABLE statement on a 4.2 million row table was run during peak hours without ALGORITHM=INPLACE or a ghost migration tool. MySQL acquired a full table lock for the duration.",
+    "resolution_steps": [
+      "Kill the running migration: KILL QUERY [process_id]",
+      "Validate application still functional after lock release",
+      "Re-run migration using gh-ost (GitHub Online Schema Change) tool",
+      "Schedule gh-ost migration during low-traffic window (01:00-03:00 UTC)",
+      "Add migration review step to deployment checklist requiring gh-ost for tables >100k rows"
+    ],
+    "time_to_resolve_mins": 52,
+    "severity": "HIGH",
+    "timestamp": "2025-11-03T19:07:00Z",
+    "tags": [
+      "mysql",
+      "migration",
+      "table-lock",
+      "alter-table",
+      "schema-change"
+    ],
+    "post_mortem_summary": "A full table lock migration on 4.2M rows during peak hours blocked all product catalog reads for 47 minutes. All schema changes on tables exceeding 100k rows are now required to use gh-ost and run during off-peak maintenance windows."
+  },
+  {
+    "id": "REC-021",
+    "incident_id": "INC-1182",
+    "service_name": "recommendation-engine",
+    "alert_text": "Memory leak detected in recommendation-engine pods. Pod memory: 7.8GB / 8GB limit. GC overhead limit exceeded. JVM heap dump triggered. Pod count reduced from 6 to 2 due to OOMKill",
+    "root_cause": "A new feature added a static in-memory HashMap to cache product embeddings. The cache had no eviction policy and no size bound, growing unbounded over 72 hours as new products were loaded.",
+    "resolution_steps": [
+      "Rolling restart all recommendation-engine pods to clear heap",
+      "Replace HashMap with Caffeine cache: CacheBuilder.newBuilder().maximumSize(50000).expireAfterWrite(1, HOURS)",
+      "Deploy recommendation-engine v3.1.2 with bounded cache",
+      "Set JVM flag -XX:+HeapDumpOnOutOfMemoryError for future diagnostics",
+      "Add heap usage alert at 80% per pod"
+    ],
+    "time_to_resolve_mins": 34,
+    "severity": "HIGH",
+    "timestamp": "2025-10-25T08:41:00Z",
+    "tags": [
+      "memory-leak",
+      "jvm",
+      "heap",
+      "cache",
+      "eviction"
+    ],
+    "post_mortem_summary": "An unbounded in-memory cache for product embeddings grew for 72 hours without eviction, exhausting pod memory and reducing capacity from 6 to 2 pods. All in-memory caches now require explicit size bounds and eviction policies enforced via code review."
+  },
+  {
+    "id": "INV-022",
+    "incident_id": "INC-8867",
+    "service_name": "inventory-db",
+    "alert_text": "Disk I/O saturation on RDS instance. WriteIOPS: 18,000/18,000 (100%). ReadIOPS: normal. Insert latency: 4200ms. Source: inventory_audit_log table inserts",
+    "root_cause": "The inventory_audit_log table had no partitioning and had grown to 890M rows. Inserts required scanning the clustered index for constraint checks, saturating IOPS on the gp2 storage volume.",
+    "resolution_steps": [
+      "Upgrade RDS storage from gp2 to gp3 and increase provisioned IOPS to 32,000",
+      "Create inventory_audit_log_partitioned with monthly RANGE partitioning",
+      "Migrate recent 3 months of data to partitioned table",
+      "Archive and truncate inventory_audit_log table",
+      "Add RDS WriteIOPS alert at 80% of provisioned limit"
+    ],
+    "time_to_resolve_mins": 88,
+    "severity": "HIGH",
+    "timestamp": "2025-11-17T06:28:00Z",
+    "tags": [
+      "rds",
+      "iops",
+      "disk-saturation",
+      "partitioning",
+      "audit-log"
+    ],
+    "post_mortem_summary": "An unpartitioned 890M row audit log table caused IOPS saturation by requiring full clustered index scans on every insert. The table is now range-partitioned by month and storage upgraded to gp3 with provisioned IOPS."
+  },
+  {
+    "id": "NOTIFY-023",
+    "incident_id": "INC-6608",
+    "service_name": "notification-worker",
+    "alert_text": "Push notification delivery rate: 12% (baseline: 94%). FCM error: SENDER_ID_MISMATCH. Affected devices: iOS and Android. APNs: normal. Error started after deploy v4.2.0",
+    "root_cause": "Deploy v4.2.0 introduced a new Firebase project configuration file (google-services.json) from the development Firebase project instead of production. The sender ID mismatch caused FCM to reject all delivery attempts.",
+    "resolution_steps": [
+      "Rollback notification-worker to v4.1.9 immediately",
+      "Identify correct production google-services.json from Firebase console",
+      "Replace development config with production config in application resources",
+      "Add CI check to validate Firebase project ID matches FIREBASE_PROJECT_ID env var",
+      "Deploy v4.2.1 with correct configuration and verify FCM delivery rate"
+    ],
+    "time_to_resolve_mins": 28,
+    "severity": "HIGH",
+    "timestamp": "2025-12-02T15:33:00Z",
+    "tags": [
+      "fcm",
+      "push-notification",
+      "firebase",
+      "config-mismatch",
+      "deployment"
+    ],
+    "post_mortem_summary": "A development Firebase config was accidentally bundled in the v4.2.0 production build, causing FCM sender ID mismatch and dropping push delivery to 12%. Firebase project ID validation is now enforced in CI before any notification-worker build is promoted."
+  },
+  {
+    "id": "API-024",
+    "incident_id": "INC-5543",
+    "service_name": "api-gateway",
+    "alert_text": "Cross-origin requests failing for mobile app. CORS preflight returning 403. Header: Access-Control-Allow-Origin missing. Affects: api.example.com requests from app.example.com. Started: 30 min ago after nginx deploy",
+    "root_cause": "An nginx config template update removed the CORS headers block from the api.example.com server block while adding them to a new admin.example.com block. The template merge had a YAML anchor collision.",
+    "resolution_steps": [
+      "Re-add CORS headers to api.example.com nginx server block",
+      "Run nginx -t to validate",
+      "Reload nginx: nginx -s reload",
+      "Test CORS preflight: curl -X OPTIONS https://api.example.com/v1/products -H 'Origin: https://app.example.com'",
+      "Add CORS preflight smoke test to post-deploy validation suite"
+    ],
+    "time_to_resolve_mins": 12,
+    "severity": "MEDIUM",
+    "timestamp": "2025-10-14T17:44:00Z",
+    "tags": [
+      "cors",
+      "nginx",
+      "mobile",
+      "config",
+      "preflight"
+    ],
+    "post_mortem_summary": "A YAML anchor collision in the nginx config template silently removed CORS headers from the production API endpoint during a routine deploy. CORS preflight validation is now included in the automated post-deploy smoke test suite."
+  },
+  {
+    "id": "SEARCH-025",
+    "incident_id": "INC-7731",
+    "service_name": "search-service",
+    "alert_text": "Autocomplete latency spike. P99: 3800ms (baseline: 45ms). Elasticsearch query: prefix query on title.keyword field across 1.2M documents. CPU on search nodes: 98%",
+    "root_cause": "A product team changed the autocomplete query from a completion suggester to a wildcard prefix query on the keyword field. Wildcard prefix queries are not optimized by Elasticsearch and cause full shard scans.",
+    "resolution_steps": [
+      "Revert autocomplete query to completion suggester in search-service config",
+      "Rebuild the suggest index: POST /products/_suggest/_update_by_query",
+      "Confirm P99 autocomplete latency returns below 60ms",
+      "Add query type validation in search-service to reject wildcard prefix queries on large indices",
+      "Document completion suggester as the required pattern in search API runbook"
+    ],
+    "time_to_resolve_mins": 23,
+    "severity": "MEDIUM",
+    "timestamp": "2025-11-29T14:08:00Z",
+    "tags": [
+      "elasticsearch",
+      "autocomplete",
+      "wildcard",
+      "query-performance",
+      "cpu"
+    ],
+    "post_mortem_summary": "A query type change from completion suggester to wildcard prefix caused full shard scans on every autocomplete keystroke, driving search node CPU to 98% and latency to 3.8 seconds. Query patterns for large indices are now reviewed by the search platform team before deployment."
+  },
+  {
+    "id": "PAY-026",
+    "incident_id": "INC-3388",
+    "service_name": "payments-api",
+    "alert_text": "PCI compliance alert: plaintext card data detected in application logs. Log line: 'Processing card: 4532015112830366 exp:12/26'. Log level: DEBUG. File: payments-api.log. Incident severity: CRITICAL",
+    "root_cause": "A developer added a DEBUG log statement during troubleshooting that logged the raw payment request body including card number and expiry. The log was committed to main and deployed to production.",
+    "resolution_steps": [
+      "Immediately rotate all potentially exposed card data \u2014 notify affected payment processor",
+      "Remove debug log statement and deploy hotfix within 15 minutes",
+      "Truncate and rotate affected log files across all log storage systems",
+      "Notify security team and begin PCI incident response procedure",
+      "Add log scanning CI job to detect PAN patterns (regex: [0-9]{13,19}) in application output"
+    ],
+    "time_to_resolve_mins": 35,
+    "severity": "CRITICAL",
+    "timestamp": "2025-10-09T10:22:00Z",
+    "tags": [
+      "pci",
+      "data-leak",
+      "logging",
+      "compliance",
+      "card-data"
+    ],
+    "post_mortem_summary": "A debug log statement exposing raw card numbers was deployed to production and persisted in log storage for 4 hours before detection. PAN detection is now enforced in CI log output scanning and debug logging is prohibited in payment processing code paths."
+  },
+  {
+    "id": "PROD-027",
+    "incident_id": "INC-9942",
+    "service_name": "product-catalog",
+    "alert_text": "Product price discrepancy reported by users. Price for SKU-48821 showing $0.01 instead of $149.99. Affected products: 847. Source: price import job completed 22:14 UTC",
+    "root_cause": "A price import CSV used a European locale (comma as decimal separator) but the import parser expected US locale (period as decimal separator). $149,99 was parsed as $14999 cents then divided by 100 incorrectly as $149.99 \u2192 $0.01 due to integer truncation.",
+    "resolution_steps": [
+      "Pause price import job and disable checkout for affected SKUs",
+      "Restore correct prices from last known good snapshot (pre-22:14 UTC)",
+      "Validate restored prices against source price list",
+      "Fix CSV parser to auto-detect locale or enforce explicit locale in import config",
+      "Add price sanity check: reject any price change >50% from current value without manual approval"
+    ],
+    "time_to_resolve_mins": 41,
+    "severity": "CRITICAL",
+    "timestamp": "2025-11-30T22:29:00Z",
+    "tags": [
+      "price-error",
+      "csv-parsing",
+      "locale",
+      "data-import",
+      "business-impact"
+    ],
+    "post_mortem_summary": "A locale mismatch in the price import parser caused 847 products to be priced at $0.01 for 41 minutes. The import pipeline now enforces explicit locale configuration and rejects price changes exceeding 50% deviation without manual approval."
+  },
+  {
+    "id": "INV-028",
+    "incident_id": "INC-6677",
+    "service_name": "inventory-db",
+    "alert_text": "Inventory count negative for 23 SKUs. sku_id: SKU-77201 quantity: -148. Race condition in concurrent reservation requests. Reservation endpoint: 12,000 req/min",
+    "root_cause": "The inventory reservation endpoint checked stock count and decremented in two separate queries without a transaction or optimistic lock. Under concurrent load, multiple requests passed the stock check before any decrement was committed.",
+    "resolution_steps": [
+      "Wrap stock check and decrement in a single transaction with SELECT ... FOR UPDATE",
+      "Add CHECK CONSTRAINT quantity >= 0 on inventory_items table",
+      "Deploy hotfix to inventory-service",
+      "Run corrective script to identify and zero-out negative inventory records",
+      "Notify fulfillment team of affected SKUs for manual stock reconciliation"
+    ],
+    "time_to_resolve_mins": 57,
+    "severity": "HIGH",
+    "timestamp": "2025-12-07T11:58:00Z",
+    "tags": [
+      "race-condition",
+      "inventory",
+      "transaction",
+      "concurrency",
+      "oversell"
+    ],
+    "post_mortem_summary": "A missing transaction boundary around the stock check-and-decrement sequence allowed concurrent requests to oversell 23 SKUs into negative inventory. All inventory mutations now use SELECT FOR UPDATE within atomic transactions and a database-level CHECK constraint prevents negative values."
+  },
+  {
+    "id": "AUTH-029",
+    "incident_id": "INC-2244",
+    "service_name": "auth-service",
+    "alert_text": "Session fixation vulnerability triggered. Security scanner alert: session token not rotated after login. Same session ID observed pre- and post-authentication. OWASP-A2 violation",
+    "root_cause": "A refactor of the login handler removed the session.regenerate() call that rotated the session ID upon successful authentication, leaving session fixation attacks possible.",
+    "resolution_steps": [
+      "Add session.regenerate() call immediately after successful credential validation",
+      "Deploy auth-service hotfix",
+      "Force logout all active sessions to invalidate any potentially fixed sessions",
+      "Run OWASP ZAP scan against auth endpoints to confirm remediation",
+      "Add session regeneration check to auth service integration test suite"
+    ],
+    "time_to_resolve_mins": 19,
+    "severity": "HIGH",
+    "timestamp": "2025-10-06T14:15:00Z",
+    "tags": [
+      "security",
+      "session-fixation",
+      "owasp",
+      "auth",
+      "vulnerability"
+    ],
+    "post_mortem_summary": "A login handler refactor accidentally removed session ID rotation, creating a session fixation vulnerability that existed for 11 days before detection by security scanning. Session regeneration is now covered by an automated security test that runs on every auth-service pull request."
+  },
+  {
+    "id": "API-030",
+    "incident_id": "INC-8855",
+    "service_name": "api-gateway",
+    "alert_text": "GraphQL introspection enabled on production API. Security audit finding: full schema exposed. Queries: __schema, __type returning 200. Endpoint: https://api.example.com/graphql",
+    "root_cause": "GraphQL introspection was intentionally disabled in the application config but a new Helm chart value GRAPHQL_INTROSPECTION defaulted to true, overriding the application-level setting.",
+    "resolution_steps": [
+      "Set GRAPHQL_INTROSPECTION=false in production Helm values immediately",
+      "Deploy api-gateway with updated configuration",
+      "Verify introspection returning 400: curl -X POST https://api.example.com/graphql -d '{\"query\":\"{__schema{types{name}}}\"}'",
+      "Audit Helm chart defaults \u2014 flag any security-sensitive values that default to permissive",
+      "Add introspection check to security smoke test suite"
+    ],
+    "time_to_resolve_mins": 13,
+    "severity": "MEDIUM",
+    "timestamp": "2025-11-08T09:47:00Z",
+    "tags": [
+      "graphql",
+      "introspection",
+      "security",
+      "helm",
+      "api"
+    ],
+    "post_mortem_summary": "A new Helm chart default enabled GraphQL introspection on the production API, exposing the full schema for 6 days before a security audit detected it. Helm chart defaults for all security-sensitive parameters are now reviewed in the security checklist before promotion."
+  },
+  {
+    "id": "REC-031",
+    "incident_id": "INC-1199",
+    "service_name": "recommendation-engine",
+    "alert_text": "Recommendation API returning stale results. Product last_updated: 2025-10-01. Current date: 2025-12-10. Newly launched product categories missing from all recommendations. Model last retrained: 72 days ago",
+    "root_cause": "The model retraining cron job had been silently failing for 72 days due to an expired AWS credentials key used by the SageMaker training job. The job exited with code 0 (logged as success) but produced no model artifact.",
+    "resolution_steps": [
+      "Rotate SageMaker IAM credentials and update in Secrets Manager",
+      "Trigger emergency model retraining: aws sagemaker create-training-job --job-name emergency-retrain",
+      "Monitor training job completion and model artifact upload to S3",
+      "Deploy updated model to recommendation endpoints",
+      "Add model artifact age alert: alert if model_last_trained > 7 days"
+    ],
+    "time_to_resolve_mins": 186,
+    "severity": "MEDIUM",
+    "timestamp": "2025-12-10T08:25:00Z",
+    "tags": [
+      "sagemaker",
+      "model-training",
+      "credentials",
+      "stale-model",
+      "cron"
+    ],
+    "post_mortem_summary": "Expired AWS credentials caused the ML model retraining cron job to silently fail for 72 days while logging success, leaving recommendations 72 days out of date. Training job success is now validated by checking for a new model artifact in S3, not just exit code."
+  },
+  {
+    "id": "NOTIFY-032",
+    "incident_id": "INC-7799",
+    "service_name": "notification-worker",
+    "alert_text": "SMS delivery failures. Twilio error 21211: invalid To phone number. Failure rate: 67%. Affected: international phone numbers. E.164 format validation missing. Volume: 4,200 failed messages",
+    "root_cause": "A new user registration flow stored phone numbers as entered by users without normalizing to E.164 format. Numbers without country codes (+1, +44, etc.) were passed directly to Twilio, which rejected them.",
+    "resolution_steps": [
+      "Add libphonenumber validation and E.164 normalization at user registration endpoint",
+      "Backfill existing invalid phone numbers using libphonenumber with user's registered country",
+      "Add Twilio error rate alert at >5% in Datadog",
+      "Deploy notification-worker with pre-send E.164 validation and dead-letter queue for invalid numbers",
+      "Notify affected users to verify phone number in account settings"
+    ],
+    "time_to_resolve_mins": 61,
+    "severity": "MEDIUM",
+    "timestamp": "2025-11-20T13:02:00Z",
+    "tags": [
+      "twilio",
+      "sms",
+      "e164",
+      "phone-validation",
+      "international"
+    ],
+    "post_mortem_summary": "Missing E.164 phone number normalization caused 67% SMS delivery failure for international users. Phone number normalization using libphonenumber is now enforced at registration and at the point of sending."
+  },
+  {
+    "id": "PROD-033",
+    "incident_id": "INC-4433",
+    "service_name": "product-catalog",
+    "alert_text": "Full-text search returning empty results for queries with special characters. Query: 'men\\'s shoes' returns 0 results. Expected: 4,821. Error: Elasticsearch query_string parse exception: failed to parse query",
+    "root_cause": "User input was being passed directly to Elasticsearch query_string query without escaping special characters. Apostrophes and other Lucene special characters caused query parse failures.",
+    "resolution_steps": [
+      "Switch from query_string to match query type for user-facing search input",
+      "Add input sanitization: escape Lucene special chars [+ - = && || > < ! ( ) { } [ ] ^ \" ~ * ? : \\ /]",
+      "Deploy search-service fix",
+      "Test with sample special character queries: apostrophes, ampersands, quotes",
+      "Add special character search test cases to regression suite"
+    ],
+    "time_to_resolve_mins": 26,
+    "severity": "MEDIUM",
+    "timestamp": "2025-10-28T11:33:00Z",
+    "tags": [
+      "elasticsearch",
+      "query-parsing",
+      "special-characters",
+      "search",
+      "input-validation"
+    ],
+    "post_mortem_summary": "Unescaped user input passed to Elasticsearch query_string caused parse failures for any search query containing Lucene special characters. User-facing search now uses the match query type which handles special characters safely without manual escaping."
+  },
+  {
+    "id": "AUTH-034",
+    "incident_id": "INC-5566",
+    "service_name": "auth-service",
+    "alert_text": "LDAP authentication failing for enterprise SSO users. Error: LDAP bind failed: InvalidCredentialsError. Affects: 23 enterprise accounts. Active Directory domain controller unreachable from auth-service pod",
+    "root_cause": "A network security group rule update blocked outbound port 636 (LDAPS) from the Kubernetes node group CIDR to the Active Directory domain controller IP range. The rule was part of a broad security hardening sweep.",
+    "resolution_steps": [
+      "Add NSG rule allowing outbound TCP 636 from K8s node CIDR to AD domain controller IP range",
+      "Verify LDAP connectivity: ldapsearch -H ldaps://ad.internal -D 'svc_auth@corp.example.com'",
+      "Confirm SSO login working for affected enterprise accounts",
+      "Document AD connectivity requirements in network runbook",
+      "Add LDAP connectivity synthetic monitor to catch future breaks proactively"
+    ],
+    "time_to_resolve_mins": 17,
+    "severity": "HIGH",
+    "timestamp": "2025-11-01T10:18:00Z",
+    "tags": [
+      "ldap",
+      "sso",
+      "active-directory",
+      "network-policy",
+      "enterprise"
+    ],
+    "post_mortem_summary": "A security hardening NSG rule blocked LDAPS outbound traffic, breaking enterprise SSO for 23 accounts for 40 minutes. Network change reviews now include validation against a documented service connectivity matrix to prevent unintended port blocks."
+  },
+  {
+    "id": "PAY-035",
+    "incident_id": "INC-3322",
+    "service_name": "payments-api",
+    "alert_text": "Currency conversion returning incorrect amounts. EUR to USD rate: 1.0 (hardcoded). Expected rate: 1.087. Revenue impact: -$8.70 per \u20ac100 transaction. Affects all EUR transactions since 08:00 UTC",
+    "root_cause": "The daily exchange rate refresh job failed silently at 08:00 UTC when the exchange rate API responded with a 503. The fallback behavior returned a default rate of 1.0 instead of the last cached valid rate.",
+    "resolution_steps": [
+      "Immediately update exchange rate cache with correct EUR/USD rate from backup provider",
+      "Patch fallback logic to use last valid cached rate, not 1.0, when refresh fails",
+      "Calculate revenue impact for EUR transactions since 08:00 UTC and issue corrections",
+      "Add secondary exchange rate API provider as fallback",
+      "Add exchange rate staleness alert if cache not refreshed within 2 hours"
+    ],
+    "time_to_resolve_mins": 33,
+    "severity": "CRITICAL",
+    "timestamp": "2025-12-04T10:17:00Z",
+    "tags": [
+      "currency",
+      "exchange-rate",
+      "fallback",
+      "revenue-impact",
+      "payments"
+    ],
+    "post_mortem_summary": "A failed exchange rate refresh fell back to a hardcoded 1.0 rate instead of the last valid cached value, undercharging EUR transactions by 8.7% for 33 minutes. The fallback now uses the last successful cache value with a secondary provider if the primary fails."
+  },
+  {
+    "id": "SEARCH-036",
+    "incident_id": "INC-9977",
+    "service_name": "search-service",
+    "alert_text": "Elasticsearch data node disk at 93%. Watermark threshold reached. Shard allocation disabled: cluster.routing.allocation.disk.watermark.high=90%. All index writes returning 429 FORBIDDEN",
+    "root_cause": "The product review index was not configured with ILM (Index Lifecycle Management) and was growing indefinitely. 14 months of raw review data (67GB) was stored with no rollover or deletion policy.",
+    "resolution_steps": [
+      "Add ILM policy to product-reviews index: hot phase 7 days, warm 30 days, delete after 90 days",
+      "Manually delete indices older than 90 days: DELETE /product-reviews-2024-09-*",
+      "Confirm disk usage drops below 85% watermark",
+      "Enable shard allocation: PUT /_cluster/settings {\"transient\":{\"cluster.routing.allocation.enable\":\"all\"}}",
+      "Apply ILM policies to all indices in Elasticsearch cluster"
+    ],
+    "time_to_resolve_mins": 44,
+    "severity": "HIGH",
+    "timestamp": "2025-11-24T07:14:00Z",
+    "tags": [
+      "elasticsearch",
+      "disk-watermark",
+      "ilm",
+      "index-lifecycle",
+      "storage"
+    ],
+    "post_mortem_summary": "A review index with no ILM policy accumulated 67GB of data over 14 months until disk watermark thresholds disabled all shard allocation. ILM policies are now mandatory for all Elasticsearch indices and audited monthly."
+  },
+  {
+    "id": "INV-037",
+    "incident_id": "INC-2211",
+    "service_name": "inventory-db",
+    "alert_text": "RDS automated backup failing for 19 consecutive days. Error: DB instance storage is full. Cannot write WAL segments for backup. Free storage: 0 bytes / 100GB",
+    "root_cause": "A combination of table bloat from unvacuumed PostgreSQL tables and un-compressed WAL archiving filled the 100GB RDS instance storage. The storage auto-scaling threshold was set too high (80GB) relative to the alert threshold.",
+    "resolution_steps": [
+      "Immediately modify RDS instance to add 200GB storage (online operation)",
+      "Run VACUUM FULL on bloated tables: pg_catalog_bloat query to identify top candidates",
+      "Enable WAL compression: SET wal_compression = on in RDS parameter group",
+      "Lower storage auto-scale threshold to 60% utilization",
+      "Restore automated backups and verify snapshot creation"
+    ],
+    "time_to_resolve_mins": 76,
+    "severity": "HIGH",
+    "timestamp": "2025-10-12T05:37:00Z",
+    "tags": [
+      "rds",
+      "backup-failure",
+      "storage-full",
+      "vacuum",
+      "postgresql"
+    ],
+    "post_mortem_summary": "Table bloat and uncompressed WAL archiving filled RDS storage over 19 days, silently disabling automated backups. Regular VACUUM scheduling, WAL compression, and storage utilization alerting are now in place to prevent silent backup failures."
+  },
+  {
+    "id": "API-038",
+    "incident_id": "INC-7766",
+    "service_name": "api-gateway",
+    "alert_text": "API versioning conflict. /v1/products and /v2/products returning identical responses after deploy. Version routing regex in nginx: ^/v[0-9]+ not matching correctly. v2 handler never invoked",
+    "root_cause": "The nginx location block for /v2 was placed after a catch-all /v1 location block. Nginx uses first-match routing for location blocks, so all versioned requests were routed to /v1.",
+    "resolution_steps": [
+      "Reorder nginx location blocks: specific version blocks before catch-all",
+      "Test routing: curl https://api.example.com/v2/products/1 returns v2 schema",
+      "Add version header validation: X-API-Version must match URL path version",
+      "Reload nginx: nginx -s reload",
+      "Add routing smoke tests for all API versions to post-deploy suite"
+    ],
+    "time_to_resolve_mins": 15,
+    "severity": "LOW",
+    "timestamp": "2025-10-20T16:29:00Z",
+    "tags": [
+      "nginx",
+      "api-versioning",
+      "routing",
+      "location-block",
+      "config"
+    ],
+    "post_mortem_summary": "Incorrect nginx location block ordering caused all /v2 API traffic to be silently routed to /v1 handlers after a config change. Version routing is now validated by automated smoke tests that verify distinct responses for each API version."
+  },
+  {
+    "id": "PROD-039",
+    "incident_id": "INC-4477",
+    "service_name": "product-catalog",
+    "alert_text": "Product variants API timeout. Endpoint: GET /products/:id/variants. Response time: 28s. Query executing: SELECT * FROM product_variants JOIN product_attributes JOIN attribute_values WHERE product_id = ? (N+1 query pattern detected)",
+    "root_cause": "A recent refactor introduced an N+1 query pattern in the product variants endpoint. For each variant, the ORM was executing a separate query for attributes and another for attribute values, resulting in 47 queries for a single product with 15 variants.",
+    "resolution_steps": [
+      "Add eager loading for product_attributes and attribute_values in ORM query",
+      "Use JOIN query with explicit SELECT to retrieve all variant data in 1 query",
+      "Add query count assertion in test: assert db.query_count < 3 for variants endpoint",
+      "Implement response cache for product variants with 60s TTL",
+      "Add slow query alert for any endpoint exceeding 500ms P95"
+    ],
+    "time_to_resolve_mins": 38,
+    "severity": "MEDIUM",
+    "timestamp": "2025-11-13T13:52:00Z",
+    "tags": [
+      "n-plus-one",
+      "orm",
+      "query-performance",
+      "product-variants",
+      "timeout"
+    ],
+    "post_mortem_summary": "An ORM refactor introduced an N+1 query pattern that executed 47 database queries for a single product variant request, causing 28 second response times. Eager loading is now enforced and query count assertions are included in the endpoint test suite."
+  },
+  {
+    "id": "AUTH-040",
+    "incident_id": "INC-6655",
+    "service_name": "auth-service",
+    "alert_text": "MFA enrollment emails not being sent. New user registrations: 1,842 users with MFA pending. Email delivery: 0. SES sending quota remaining: 50,000. auth-service logs: SMTP connection timeout to email-service:587",
+    "root_cause": "The internal email-service had been scaled to 0 replicas by an accidental kubectl scale command run in production instead of staging. The command was in a developer's terminal history from a staging optimization.",
+    "resolution_steps": [
+      "kubectl scale deployment/email-service --replicas=3 -n production",
+      "Verify SMTP connectivity from auth-service",
+      "Trigger retry for all pending MFA enrollment emails in the queue",
+      "Implement accidental scale protection: add minReplicas=1 to HPA for critical services",
+      "Audit kubectl context management \u2014 enforce kubie or kubectx prompt display in terminal"
+    ],
+    "time_to_resolve_mins": 11,
+    "severity": "HIGH",
+    "timestamp": "2025-12-08T09:44:00Z",
+    "tags": [
+      "kubernetes",
+      "scale-to-zero",
+      "smtp",
+      "mfa",
+      "human-error"
+    ],
+    "post_mortem_summary": "An accidental kubectl scale command in the wrong context scaled the email service to 0 replicas in production, blocking MFA enrollment for 1,842 new users. Critical services now have HPA minReplicas=1 enforced and kubectl context is displayed prominently in terminal prompts."
+  },
+  {
+    "id": "PAY-041",
+    "incident_id": "INC-1177",
+    "service_name": "payments-api",
+    "alert_text": "3DS authentication bypass detected. Payments processing without 3DS challenge for cards requiring SCA (Strong Customer Authentication). Regulatory non-compliance: PSD2. Estimated affected volume: 2,100 transactions",
+    "root_cause": "A feature flag REQUIRE_3DS was set to false in the production feature flag service during a testing window and was never re-enabled. The flag had no expiry and was not included in the deployment checklist review.",
+    "resolution_steps": [
+      "Immediately set REQUIRE_3DS=true in feature flag service",
+      "Audit all transactions during bypass window for SCA compliance",
+      "Submit regulatory report to payment processor for affected transactions",
+      "Add feature flag expiry enforcement: flags without expiry dates are blocked in production",
+      "Add 3DS bypass detection to payment monitoring: alert if 3DS skipped for SCA-required cards"
+    ],
+    "time_to_resolve_mins": 127,
+    "severity": "CRITICAL",
+    "timestamp": "2025-11-16T20:08:00Z",
+    "tags": [
+      "psd2",
+      "3ds",
+      "sca",
+      "compliance",
+      "feature-flag",
+      "payments"
+    ],
+    "post_mortem_summary": "A testing feature flag disabling 3DS authentication was never re-enabled, allowing 2,100 transactions to bypass Strong Customer Authentication in violation of PSD2. Feature flags in production now require expiry dates and compliance-impacting flags are monitored continuously."
+  },
+  {
+    "id": "NOTIFY-042",
+    "incident_id": "INC-9933",
+    "service_name": "notification-worker",
+    "alert_text": "Notification deduplication failure. Users receiving 47 copies of order confirmation email. Order ID: ORD-88221. SQS message redelivery: visibility timeout set to 1s (should be 300s). Message processed 47 times",
+    "root_cause": "The SQS message visibility timeout was inadvertently set to 1 second during a parameter store update. Processing took 8 seconds, causing messages to become visible again before completion and be processed multiple times.",
+    "resolution_steps": [
+      "Update SQS visibility timeout to 300 seconds via AWS console",
+      "Purge affected messages from DLQ to prevent further reprocessing",
+      "Implement idempotency check using message deduplication ID before sending",
+      "Add SQS visibility timeout validation to infrastructure deployment checklist",
+      "Apologize to affected customers and provide discount code"
+    ],
+    "time_to_resolve_mins": 29,
+    "severity": "HIGH",
+    "timestamp": "2025-10-31T14:05:00Z",
+    "tags": [
+      "sqs",
+      "visibility-timeout",
+      "deduplication",
+      "email-spam",
+      "idempotency"
+    ],
+    "post_mortem_summary": "A 1-second SQS visibility timeout caused order confirmation emails to be sent 47 times to affected customers as messages were reprocessed faster than they could complete. Idempotency checks are now enforced before every notification send and visibility timeout changes require infrastructure review."
+  },
+  {
+    "id": "SEARCH-043",
+    "incident_id": "INC-8811",
+    "service_name": "search-service",
+    "alert_text": "Search relevance degraded. Click-through rate dropped 31% after deploy v5.1.0. BM25 scoring weights changed. top-result relevance score: 0.21 (was 0.87). Boost multiplier: 0.1 (was 10.0)",
+    "root_cause": "A config file decimal point typo changed the title field boost multiplier from 10.0 to 0.1, causing title matches to be weighted 100x less than intended. The change was in a JSON config file and was not caught by CI.",
+    "resolution_steps": [
+      "Rollback search-service to v5.0.9 immediately",
+      "Identify typo in elasticsearch_config.json: title.boost: 0.1 \u2192 10.0",
+      "Add config validation test: assert boost values within expected range [1.0, 20.0]",
+      "Deploy v5.1.1 with fix and config validation",
+      "Monitor CTR and relevance metrics for 24h post-deploy"
+    ],
+    "time_to_resolve_mins": 31,
+    "severity": "HIGH",
+    "timestamp": "2025-11-26T10:41:00Z",
+    "tags": [
+      "search-relevance",
+      "bm25",
+      "config-typo",
+      "boost",
+      "ctr"
+    ],
+    "post_mortem_summary": "A decimal point typo reduced the search title boost multiplier from 10.0 to 0.1, degrading search relevance and dropping click-through rate by 31% within hours of deployment. Numeric config values for search parameters are now validated against expected ranges in CI."
+  },
+  {
+    "id": "INV-044",
+    "incident_id": "INC-5588",
+    "service_name": "inventory-db",
+    "alert_text": "Scheduled job failed: nightly_inventory_reconciliation. Exit code: 137 (OOMKilled). Kubernetes job resource limit: memory=256Mi. Dataset size: 2.1M records. Job not completed for 3 consecutive nights",
+    "root_cause": "The nightly reconciliation job dataset grew from 200k to 2.1M records over 6 months but the Kubernetes job memory limit was never updated. The job was OOMKilled at the same point each night without alerting.",
+    "resolution_steps": [
+      "Increase job memory limit from 256Mi to 2Gi in job manifest",
+      "Add streaming/batching to reconciliation logic: process in 50k record chunks",
+      "Trigger manual reconciliation run to catch 3-night gap",
+      "Set up Kubernetes job failure alerting via Prometheus job_failed metric",
+      "Add memory profiling step to job performance review checklist"
+    ],
+    "time_to_resolve_mins": 94,
+    "severity": "MEDIUM",
+    "timestamp": "2025-12-06T06:18:00Z",
+    "tags": [
+      "kubernetes-job",
+      "oomkilled",
+      "memory-limit",
+      "reconciliation",
+      "silent-failure"
+    ],
+    "post_mortem_summary": "A Kubernetes batch job was silently OOMKilled every night for 3 days because memory limits were never updated as the dataset grew 10x. All Kubernetes jobs now have failure alerts and memory limits are reviewed quarterly as part of capacity planning."
+  },
+  {
+    "id": "API-045",
+    "incident_id": "INC-3399",
+    "service_name": "api-gateway",
+    "alert_text": "API response compression causing corruption. Gzip response body corrupt for requests with Accept-Encoding: gzip, deflate, br. Error: incorrect data check. Affects: all JSON responses >1KB. Started after nginx upgrade 1.24.0\u21921.25.2",
+    "root_cause": "nginx 1.25.2 changed the default gzip_proxied setting behavior when upstream servers send Transfer-Encoding: chunked. The double-compression from both upstream and nginx was corrupting response bodies.",
+    "resolution_steps": [
+      "Set gzip_proxied off in nginx.conf to disable nginx-level compression when upstream handles it",
+      "Verify response integrity: curl --compressed https://api.example.com/products | python -m json.tool",
+      "Reload nginx",
+      "Add Content-Encoding validation to API response integration tests",
+      "Pin nginx version to 1.24.0 until 1.25.2 behavior is fully understood"
+    ],
+    "time_to_resolve_mins": 22,
+    "severity": "HIGH",
+    "timestamp": "2025-10-24T15:18:00Z",
+    "tags": [
+      "nginx",
+      "gzip",
+      "compression",
+      "double-encoding",
+      "upstream"
+    ],
+    "post_mortem_summary": "An nginx version upgrade changed double-compression behavior, corrupting all JSON responses larger than 1KB for clients supporting gzip. Response compression is now validated in integration tests and nginx upgrades require explicit compression behavior testing."
+  },
+  {
+    "id": "PROD-046",
+    "incident_id": "INC-1166",
+    "service_name": "product-catalog",
+    "alert_text": "Category tree returning infinite loop. GET /categories returning 200 but body: [object Object][object Object]... Response size: 847MB. Server CPU: 100%. Category parent_id circular reference detected: CAT-441 \u2192 CAT-228 \u2192 CAT-441",
+    "root_cause": "A data migration script incorrectly set parent_id on two categories to create a circular reference. The API serializer had no cycle detection and serialized infinitely until memory was exhausted.",
+    "resolution_steps": [
+      "Immediately add depth limit of 10 to category tree serializer as emergency fix",
+      "Fix circular reference in database: UPDATE categories SET parent_id=NULL WHERE id='CAT-441'",
+      "Add database constraint: CHECK that parent_id does not create cycles (via recursive CTE validation)",
+      "Add cycle detection to category tree builder using visited node set",
+      "Deploy fix and verify /categories response size reasonable (<50KB)"
+    ],
+    "time_to_resolve_mins": 36,
+    "severity": "HIGH",
+    "timestamp": "2025-11-09T16:07:00Z",
+    "tags": [
+      "circular-reference",
+      "infinite-loop",
+      "category-tree",
+      "serialization",
+      "data-migration"
+    ],
+    "post_mortem_summary": "A data migration created a circular parent_id reference in the category hierarchy, causing the tree serializer to loop infinitely and return 847MB responses that saturated CPU. Cycle detection is now enforced in the serializer and a database constraint prevents circular references."
+  },
+  {
+    "id": "AUTH-047",
+    "incident_id": "INC-7788",
+    "service_name": "auth-service",
+    "alert_text": "Refresh token rotation not working. Users logged out unexpectedly after 15 minutes. Error: refresh_token_already_used. Token reuse detection falsely triggering. Redis cluster in split-brain state",
+    "root_cause": "A Redis Cluster failover caused a brief split-brain condition where two nodes both accepted writes for the same key slot. Refresh tokens written during this window were persisted on the minority partition and lost after cluster recovery.",
+    "resolution_steps": [
+      "Resolve Redis Cluster split-brain: identify majority partition and force minority to rejoin",
+      "Implement grace period for refresh token reuse: allow same token once within 5s window",
+      "Add Redis Cluster health check to auth-service startup probe",
+      "Switch refresh token storage to use WAIT 1 0 command to ensure replica acknowledgment",
+      "Add split-brain detection alert on Redis Cluster node count"
+    ],
+    "time_to_resolve_mins": 48,
+    "severity": "HIGH",
+    "timestamp": "2025-11-04T22:33:00Z",
+    "tags": [
+      "redis-cluster",
+      "split-brain",
+      "refresh-token",
+      "session",
+      "failover"
+    ],
+    "post_mortem_summary": "A Redis Cluster split-brain condition during failover caused refresh tokens to be lost from the minority partition, triggering false reuse detection and logging out users. Refresh token writes now use WAIT for replica confirmation and a grace period handles clock skew during failover."
+  },
+  {
+    "id": "PAY-048",
+    "incident_id": "INC-4455",
+    "service_name": "payments-api",
+    "alert_text": "Recurring subscription charge failures. Error: Card expired for 4,821 subscriptions. Dunning management not triggered. Subscription renewal job ran successfully but charged 0 subscriptions. Dry-run flag: true",
+    "root_cause": "The subscription renewal cron job had a DRY_RUN=true environment variable set for testing that was never removed. The job logged successful execution and sent no actual charges for 3 billing cycles.",
+    "resolution_steps": [
+      "Set DRY_RUN=false in subscription-service ECS task definition",
+      "Run immediate retry for all subscriptions that missed the last 3 billing cycles",
+      "Implement dunning emails for failed/missed charges",
+      "Add charge count assertion: alert if renewal job processes 0 charges on expected billing date",
+      "Audit all cron jobs for leftover testing environment variables"
+    ],
+    "time_to_resolve_mins": 74,
+    "severity": "CRITICAL",
+    "timestamp": "2025-10-07T08:00:00Z",
+    "tags": [
+      "dry-run",
+      "subscriptions",
+      "billing",
+      "cron",
+      "revenue-impact"
+    ],
+    "post_mortem_summary": "A DRY_RUN=true flag left from testing prevented 4,821 subscription charges across 3 billing cycles. All scheduled financial jobs now include a post-execution charge count validation and dry-run flags require explicit removal tickets before production deployment."
+  },
+  {
+    "id": "REC-049",
+    "incident_id": "INC-2266",
+    "service_name": "recommendation-engine",
+    "alert_text": "A/B test personalization serving wrong variant. Variant B (new model) should be 10% traffic. Actual Variant B traffic: 100%. Feature flag rollout misconfigured. All users receiving experimental recommendations",
+    "root_cause": "The A/B test was configured with rollout percentage as a string '10' instead of integer 10 in the LaunchDarkly flag configuration. The SDK treated non-integer percentage as 100% rollout.",
+    "resolution_steps": [
+      "Update LaunchDarkly flag rollout from string '10' to integer 10 immediately",
+      "Verify traffic split in LaunchDarkly dashboard shows 90/10 distribution",
+      "Analyze recommendation performance data from the 100% rollout window for insights",
+      "Add type validation to feature flag configuration deployment script",
+      "Document LaunchDarkly rollout percentage type requirement in A/B testing runbook"
+    ],
+    "time_to_resolve_mins": 16,
+    "severity": "LOW",
+    "timestamp": "2025-11-21T13:27:00Z",
+    "tags": [
+      "ab-testing",
+      "launchdarkly",
+      "feature-flag",
+      "rollout",
+      "type-coercion"
+    ],
+    "post_mortem_summary": "A string-typed rollout percentage in LaunchDarkly caused the SDK to interpret it as 100% rollout instead of 10%, exposing all users to an experimental recommendation model. Feature flag configurations now include type validation in the deployment pipeline."
+  },
+  {
+    "id": "INV-050",
+    "incident_id": "INC-9955",
+    "service_name": "inventory-db",
+    "alert_text": "Point-in-time recovery test failed. RTO exceeded: recovery took 6.5 hours, SLA requires 2 hours. pg_basebackup restore succeeded but WAL replay stalled at 40%. WAL files missing from S3 archive for window 14:00-18:00 UTC on 2025-10-03",
+    "root_cause": "The WAL archiving script had an intermittent S3 upload failure for a 4-hour window on 2025-10-03 due to S3 throttling. The failure was logged but no alert was fired, leaving a 4-hour gap in the WAL archive that only surfaced during a recovery test.",
+    "resolution_steps": [
+      "Implement WAL archive completeness check: verify no gaps in sequence numbers every 15 minutes",
+      "Add S3 upload retry with exponential backoff to WAL archive script",
+      "Configure S3 Transfer Acceleration for WAL uploads to reduce throttling",
+      "Add alert: fire PagerDuty if WAL archive gap exceeds 5 minutes",
+      "Schedule monthly PITR recovery drills and track actual RTO against SLA"
+    ],
+    "time_to_resolve_mins": 390,
+    "severity": "HIGH",
+    "timestamp": "2025-10-15T09:00:00Z",
+    "tags": [
+      "postgres",
+      "wal-archiving",
+      "pitr",
+      "recovery",
+      "rto",
+      "s3"
+    ],
+    "post_mortem_summary": "Silent WAL archiving failures left a 4-hour gap in the database recovery archive that was only discovered during a PITR drill, causing RTO to exceed SLA by 4.5 hours. WAL archive completeness is now continuously validated and gaps trigger immediate PagerDuty alerts."
+  }
+]

@@ -1,0 +1,600 @@
+[
+  {
+    "id": "SESS-001",
+    "service_name": "session-store",
+    "alert_text": "CRITICAL Redis OOM - session-store Redis instance killed by OOM killer. Used memory: 8.2GB/8GB maxmemory",
+    "root_cause": "Session TTL misconfiguration allowed expired sessions to accumulate, exceeding Redis maxmemory limit and triggering the Linux OOM killer.",
+    "resolution_steps": [
+      "Restarted Redis instance with increased maxmemory to 12GB",
+      "Flushed expired session keys using SCAN with TTL filter",
+      "Fixed session TTL from 0 (infinite) to 3600 seconds in session-store config"
+    ],
+    "severity": "CRITICAL",
+    "timestamp": "2024-09-15T02:31:00Z",
+    "tags": [
+      "redis",
+      "oom",
+      "session",
+      "memory"
+    ],
+    "post_mortem_summary": "All user sessions were lost when Redis was killed by OOM. A TTL enforcement policy and maxmemory-policy allkeys-lru were configured to prevent recurrence.",
+    "time_to_resolve_mins": 22,
+    "incident_id": "INC-8763"
+  },
+  {
+    "id": "GW-001",
+    "service_name": "api-gateway",
+    "alert_text": "ERROR Redis connection pool exhausted. Active connections: 256/256. Pending requests queued: 1847",
+    "root_cause": "API gateway rate limiter held Redis connections open during slow upstream responses, exhausting the connection pool under sustained traffic.",
+    "resolution_steps": [
+      "Increased Redis connection pool size from 256 to 512",
+      "Added connection timeout of 500ms to rate limiter Redis client",
+      "Deployed circuit breaker around Redis-backed rate limiting with in-memory fallback"
+    ],
+    "severity": "HIGH",
+    "timestamp": "2024-09-22T14:07:33Z",
+    "tags": [
+      "redis",
+      "connection-pool",
+      "gateway",
+      "rate-limiter"
+    ],
+    "post_mortem_summary": "API gateway began rejecting requests when Redis connections were exhausted. Connection pool monitoring and fallback rate limiting were implemented.",
+    "time_to_resolve_mins": 35,
+    "incident_id": "INC-8476"
+  },
+  {
+    "id": "REC-001",
+    "service_name": "recommendation-engine",
+    "alert_text": "WARN Redis eviction rate spiked to 12000 keys/sec on feature-cache cluster. Cache hit ratio dropped to 31%",
+    "root_cause": "New product embedding vectors stored in Redis exceeded allocated memory, triggering aggressive LRU eviction of frequently accessed feature vectors.",
+    "resolution_steps": [
+      "Migrated large embedding vectors to dedicated Redis cluster with 32GB allocation",
+      "Reduced embedding dimensionality from 768 to 256 for cache storage",
+      "Implemented tiered caching with hot features in Redis and cold in disk-backed store"
+    ],
+    "severity": "MEDIUM",
+    "timestamp": "2024-10-03T09:45:12Z",
+    "tags": [
+      "redis",
+      "eviction",
+      "cache",
+      "embeddings"
+    ],
+    "post_mortem_summary": "Recommendation latency increased 4x due to cache misses from eviction storms. Embedding storage was separated from operational cache with dedicated memory allocation.",
+    "time_to_resolve_mins": 48,
+    "incident_id": "INC-1149"
+  },
+  {
+    "id": "INV-001",
+    "service_name": "inventory-db",
+    "alert_text": "SLOW QUERY ALERT: SELECT stock_level FROM inventory WHERE sku IN (...) took 18.7s. Rows examined: 4,200,000",
+    "root_cause": "Missing composite index on (sku, warehouse_id) forced PostgreSQL into sequential scan when inventory check queries contained more than 100 SKUs.",
+    "resolution_steps": [
+      "Created composite index CREATE INDEX idx_inventory_sku_warehouse ON inventory(sku, warehouse_id)",
+      "Added query planner hint to force index usage for IN clauses over 50 items",
+      "Implemented batch chunking to limit IN clause to 100 SKUs per query"
+    ],
+    "severity": "HIGH",
+    "timestamp": "2024-09-28T18:22:05Z",
+    "tags": [
+      "database",
+      "slow-query",
+      "postgresql",
+      "indexing"
+    ],
+    "post_mortem_summary": "Cart and checkout flows experienced 15-20 second delays during inventory validation. Index creation reduced query time from 18s to 12ms.",
+    "time_to_resolve_mins": 27,
+    "incident_id": "INC-2833"
+  },
+  {
+    "id": "ORD-001",
+    "service_name": "order-service",
+    "alert_text": "FATAL: remaining connection slots are reserved for non-replication superuser connections. Active connections: 200/200",
+    "root_cause": "Database connection pool leak in the order retry handler kept connections open after transaction rollback, gradually exhausting PostgreSQL max_connections.",
+    "resolution_steps": [
+      "Identified leaked connections using pg_stat_activity showing idle-in-transaction state",
+      "Patched order retry handler to properly release connections in finally block",
+      "Reduced max_connections per service from 200 to 100 and enabled PgBouncer connection pooling"
+    ],
+    "severity": "HIGH",
+    "timestamp": "2024-10-11T03:14:28Z",
+    "tags": [
+      "database",
+      "connection-exhaustion",
+      "postgresql",
+      "connection-pool"
+    ],
+    "post_mortem_summary": "Order processing halted completely when all database connections were consumed. PgBouncer was deployed and connection lifecycle management was audited across all services.",
+    "time_to_resolve_mins": 41,
+    "incident_id": "INC-2740"
+  },
+  {
+    "id": "AUTH-001",
+    "service_name": "auth-service",
+    "alert_text": "ERROR Deadlock detected: Process 8842 waits for ShareLock on transaction 9918423; blocked by process 8847",
+    "root_cause": "Concurrent user profile updates and session writes acquired locks in opposite order on the users and sessions tables, causing cyclic deadlocks.",
+    "resolution_steps": [
+      "Reordered lock acquisition to always lock users table before sessions table",
+      "Wrapped profile update and session write in a single serializable transaction",
+      "Added advisory lock on user_id to serialize concurrent operations per user"
+    ],
+    "severity": "HIGH",
+    "timestamp": "2024-10-18T11:38:47Z",
+    "tags": [
+      "database",
+      "deadlock",
+      "postgresql",
+      "locking"
+    ],
+    "post_mortem_summary": "Login failures spiked to 8% during peak hours due to deadlocks. Lock ordering convention was documented and enforced across auth-service database operations.",
+    "time_to_resolve_mins": 53,
+    "incident_id": "INC-9275"
+  },
+  {
+    "id": "PAY-001",
+    "service_name": "payments-api",
+    "alert_text": "ERROR SSL certificate verification failed: certificate has expired. Host: payment-gateway.provider.com:443",
+    "root_cause": "Third-party payment gateway SSL certificate expired and the payments-api certificate pinning configuration prevented fallback to the renewed certificate.",
+    "resolution_steps": [
+      "Updated certificate pin to include both current and backup certificates from payment provider",
+      "Deployed emergency config update to payments-api with new certificate fingerprint",
+      "Added certificate expiry monitoring for all external service endpoints"
+    ],
+    "severity": "CRITICAL",
+    "timestamp": "2024-10-25T06:12:00Z",
+    "tags": [
+      "ssl",
+      "certificate",
+      "payments",
+      "expiry"
+    ],
+    "post_mortem_summary": "All payment processing failed for 45 minutes during certificate expiry window. Automated certificate expiry alerting with 30-day advance warning was implemented.",
+    "time_to_resolve_mins": 45,
+    "incident_id": "INC-6261"
+  },
+  {
+    "id": "GW-002",
+    "service_name": "api-gateway",
+    "alert_text": "ERROR TLS handshake timeout after 10s for internal service mesh communication. Affected: 12 upstream services",
+    "root_cause": "Istio sidecar proxy certificate rotation failed silently, leaving expired mTLS certificates that blocked all inter-service communication.",
+    "resolution_steps": [
+      "Restarted Istio citadel to force certificate reissuance",
+      "Rolling restarted all affected service pods to pick up new certificates",
+      "Configured Istio certificate rotation monitoring with 24h advance alerting"
+    ],
+    "severity": "HIGH",
+    "timestamp": "2024-11-02T19:55:33Z",
+    "tags": [
+      "ssl",
+      "certificate",
+      "mtls",
+      "istio",
+      "service-mesh"
+    ],
+    "post_mortem_summary": "Complete service mesh communication failure lasted 30 minutes affecting all microservices. mTLS certificate lifecycle monitoring was added to infrastructure observability.",
+    "time_to_resolve_mins": 30,
+    "incident_id": "INC-4750"
+  },
+  {
+    "id": "GW-003",
+    "service_name": "api-gateway",
+    "alert_text": "WARN p99 latency exceeded 5000ms on /api/v2/products endpoint. Current p99: 8230ms. Normal baseline: 120ms",
+    "root_cause": "Nginx upstream keepalive connections were being closed by a misconfigured load balancer idle timeout (30s) shorter than the gateway keepalive timeout (60s), forcing TCP reconnections.",
+    "resolution_steps": [
+      "Aligned load balancer idle timeout to 65s to exceed gateway keepalive of 60s",
+      "Enabled TCP keepalive probes on load balancer to prevent premature connection closure",
+      "Added latency percentile monitoring with automated alerting at p95 and p99 thresholds"
+    ],
+    "severity": "MEDIUM",
+    "timestamp": "2024-11-09T08:33:17Z",
+    "tags": [
+      "gateway",
+      "latency",
+      "keepalive",
+      "load-balancer"
+    ],
+    "post_mortem_summary": "Product listing pages loaded slowly affecting conversion rates. Load balancer and gateway timeout alignment was standardized across all environments.",
+    "time_to_resolve_mins": 38,
+    "incident_id": "INC-6103"
+  },
+  {
+    "id": "SRCH-001",
+    "service_name": "search-service",
+    "alert_text": "CRITICAL p99 search latency at 12400ms. Elasticsearch cluster yellow status. Relocating shards: 47",
+    "root_cause": "Automated index rollover created 200 small shards overnight, exceeding cluster shard limit and triggering continuous shard rebalancing.",
+    "resolution_steps": [
+      "Increased cluster.max_shards_per_node from 1000 to 2000 as immediate relief",
+      "Merged small indices using force merge API to reduce shard count by 60%",
+      "Reconfigured ILM policy to rollover at 30GB instead of 1GB to prevent shard proliferation"
+    ],
+    "severity": "MEDIUM",
+    "timestamp": "2024-11-15T22:18:44Z",
+    "tags": [
+      "gateway",
+      "latency",
+      "elasticsearch",
+      "shards"
+    ],
+    "post_mortem_summary": "Search became unusable with 12s response times during shard rebalancing storm. Index lifecycle management policies were revised with shard budget planning.",
+    "time_to_resolve_mins": 67,
+    "incident_id": "INC-3660"
+  },
+  {
+    "id": "CAT-001",
+    "service_name": "product-catalog",
+    "alert_text": "ERROR DiskSpaceMonitor: /data partition 97% full. Estimated time to full: 4 hours. Current usage: 465GB/480GB",
+    "root_cause": "Product image processing pipeline wrote uncompressed temporary files to /data without cleanup, filling the catalog service data volume.",
+    "resolution_steps": [
+      "Purged 180GB of orphaned temporary image files from /data/tmp/processing",
+      "Implemented tmpwatch cron job to auto-delete temp files older than 2 hours",
+      "Moved image processing scratch space to ephemeral storage with separate volume mount"
+    ],
+    "severity": "MEDIUM",
+    "timestamp": "2024-11-22T04:47:29Z",
+    "tags": [
+      "disk",
+      "storage",
+      "cleanup",
+      "images"
+    ],
+    "post_mortem_summary": "Product catalog service risked data partition exhaustion within hours. Temporary file lifecycle management and dedicated ephemeral storage were implemented.",
+    "time_to_resolve_mins": 19,
+    "incident_id": "INC-1962"
+  },
+  {
+    "id": "INV-002",
+    "service_name": "inventory-db",
+    "alert_text": "CRITICAL WAL segment accumulation detected. pg_wal directory size: 89GB. Disk usage at 94%",
+    "root_cause": "Stalled replication slot from a decommissioned replica prevented WAL segment recycling, causing unbounded WAL growth on the primary database.",
+    "resolution_steps": [
+      "Identified inactive replication slot using pg_replication_slots view",
+      "Dropped stalled replication slot: SELECT pg_drop_replication_slot('replica_old')",
+      "PostgreSQL automatically recycled 85GB of WAL segments within minutes after slot removal"
+    ],
+    "severity": "CRITICAL",
+    "timestamp": "2024-12-01T15:09:51Z",
+    "tags": [
+      "disk",
+      "storage",
+      "postgresql",
+      "wal",
+      "replication"
+    ],
+    "post_mortem_summary": "Database server nearly ran out of disk due to WAL accumulation from an orphaned replication slot. Automated replication slot monitoring was deployed.",
+    "time_to_resolve_mins": 15,
+    "incident_id": "INC-5074"
+  },
+  {
+    "id": "NOTIF-001",
+    "service_name": "notification-worker",
+    "alert_text": "ERROR RabbitMQ consumer lag critical. Queue: email-notifications. Messages pending: 847,293. Consumer count: 0",
+    "root_cause": "Notification worker deployment failed silently due to image pull error, leaving zero consumers running while messages continued to enqueue.",
+    "resolution_steps": [
+      "Fixed container image tag reference in notification-worker deployment manifest",
+      "Redeployed notification-worker with correct image, scaling to 8 replicas to drain backlog",
+      "Added consumer count alerting with minimum threshold of 2 active consumers per queue"
+    ],
+    "severity": "MEDIUM",
+    "timestamp": "2024-12-08T10:26:14Z",
+    "tags": [
+      "queue",
+      "rabbitmq",
+      "consumer",
+      "deployment"
+    ],
+    "post_mortem_summary": "Email notifications were delayed by 6 hours during consumer outage. Deployment validation now checks consumer registration within 60 seconds of rollout.",
+    "time_to_resolve_mins": 42,
+    "incident_id": "INC-7528"
+  },
+  {
+    "id": "ORD-002",
+    "service_name": "order-service",
+    "alert_text": "ERROR Kafka consumer group rebalancing loop detected. Group: order-processing. Rebalances in last hour: 47",
+    "root_cause": "Order processing consumer max.poll.interval.ms was set to 5 minutes but some orders with large item counts took 8+ minutes to process, triggering repeated group rebalances.",
+    "resolution_steps": [
+      "Increased max.poll.interval.ms from 300000 to 900000 for order-processing consumer group",
+      "Reduced max.poll.records from 500 to 50 to process smaller batches per poll cycle",
+      "Added per-order processing time metrics to identify slow-processing order patterns"
+    ],
+    "severity": "MEDIUM",
+    "timestamp": "2024-12-15T17:42:08Z",
+    "tags": [
+      "queue",
+      "kafka",
+      "consumer",
+      "rebalancing"
+    ],
+    "post_mortem_summary": "Order processing throughput dropped 80% during rebalancing storms. Consumer configuration was tuned and batch size reduced to prevent future rebalance cascades.",
+    "time_to_resolve_mins": 33,
+    "incident_id": "INC-6700"
+  },
+  {
+    "id": "SRCH-002",
+    "service_name": "search-service",
+    "alert_text": "ERROR JVM heap usage at 96%. GC overhead limit exceeded. Full GC cycles: 14 in last 5 minutes",
+    "root_cause": "Search service loaded entire product taxonomy tree into memory on each request instead of caching it, causing heap exhaustion under concurrent search load.",
+    "resolution_steps": [
+      "Implemented taxonomy tree caching with 5-minute TTL using Caffeine cache library",
+      "Increased JVM heap from 4GB to 8GB as immediate mitigation",
+      "Added JVM heap usage alerting at 80% threshold with automatic heap dump capture"
+    ],
+    "severity": "HIGH",
+    "timestamp": "2024-12-22T13:55:39Z",
+    "tags": [
+      "memory-leak",
+      "jvm",
+      "heap",
+      "gc"
+    ],
+    "post_mortem_summary": "Search service crashed repeatedly due to memory exhaustion from uncached taxonomy loading. Object caching and heap monitoring prevented recurrence.",
+    "time_to_resolve_mins": 56,
+    "incident_id": "INC-7418"
+  },
+  {
+    "id": "REC-002",
+    "service_name": "recommendation-engine",
+    "alert_text": "WARN Container memory usage: 7.8GB/8GB (97.5%). OOMKill imminent. RSS growing at 50MB/hour",
+    "root_cause": "Python recommendation service leaked TensorFlow session objects when model hot-reloading failed, accumulating unreleased GPU memory allocations.",
+    "resolution_steps": [
+      "Added explicit tf.Session.close() in model reload error handler",
+      "Implemented memory usage watchdog that triggers graceful restart at 90% memory threshold",
+      "Configured Kubernetes memory limit to 12GB with proper resource requests for scheduling"
+    ],
+    "severity": "LOW",
+    "timestamp": "2025-01-05T20:31:22Z",
+    "tags": [
+      "memory-leak",
+      "python",
+      "tensorflow",
+      "oom"
+    ],
+    "post_mortem_summary": "Recommendation pods were OOMKilled every 12 hours due to TensorFlow session leaks. Session lifecycle management and proactive memory monitoring were added.",
+    "time_to_resolve_mins": 71,
+    "incident_id": "INC-5875"
+  },
+  {
+    "id": "AUTH-002",
+    "service_name": "auth-service",
+    "alert_text": "ERROR OAuth2TokenService - JWT signature verification failed. KeyID: rsa-key-2024-q3 not found in JWKS endpoint",
+    "root_cause": "Identity provider rotated JWKS signing keys but auth-service cached the old JWKS for 24 hours, causing all token validations to fail after key rotation.",
+    "resolution_steps": [
+      "Reduced JWKS cache TTL from 24 hours to 5 minutes",
+      "Implemented JWKS cache invalidation on signature verification failure with immediate refetch",
+      "Added fallback to try all keys in JWKS before rejecting token"
+    ],
+    "severity": "LOW",
+    "timestamp": "2025-01-12T07:18:55Z",
+    "tags": [
+      "auth",
+      "jwt",
+      "jwks",
+      "key-rotation"
+    ],
+    "post_mortem_summary": "All authenticated API calls failed for 20 minutes after IdP key rotation. JWKS caching strategy was revised with shorter TTL and on-failure refresh.",
+    "time_to_resolve_mins": 20,
+    "incident_id": "INC-3656"
+  },
+  {
+    "id": "PAY-002",
+    "service_name": "payments-api",
+    "alert_text": "ERROR PaymentReconciliation - 342 transactions in PENDING state for >30 minutes. Expected completion: <5 minutes",
+    "root_cause": "Webhook endpoint for payment provider callbacks was returning 503 due to rate limiting, causing payment status updates to be dropped silently.",
+    "resolution_steps": [
+      "Increased rate limit for /webhooks/payments endpoint from 100 to 1000 req/s",
+      "Implemented webhook retry queue to buffer and replay failed webhook deliveries",
+      "Added reconciliation job that polls payment provider API for stale PENDING transactions every 5 minutes"
+    ],
+    "severity": "CRITICAL",
+    "timestamp": "2025-01-20T16:44:31Z",
+    "tags": [
+      "payments",
+      "webhooks",
+      "reconciliation",
+      "rate-limit"
+    ],
+    "post_mortem_summary": "Customers saw stuck payment status on 342 orders. Webhook processing capacity was increased and a safety-net reconciliation poller was deployed.",
+    "time_to_resolve_mins": 37,
+    "incident_id": "INC-4644"
+  },
+  {
+    "id": "CAT-002",
+    "service_name": "product-catalog",
+    "alert_text": "ERROR ElasticsearchSyncJob - Bulk index request failed. 2847 documents rejected: mapper_parsing_exception",
+    "root_cause": "Product data feed included new fields with incompatible types that conflicted with existing Elasticsearch index mapping (string sent for integer price field).",
+    "resolution_steps": [
+      "Identified malformed documents using Elasticsearch rejection logs",
+      "Added schema validation layer before Elasticsearch bulk indexing",
+      "Reindexed rejected documents after data type correction in upstream feed"
+    ],
+    "severity": "MEDIUM",
+    "timestamp": "2025-01-28T11:09:17Z",
+    "tags": [
+      "catalog",
+      "elasticsearch",
+      "indexing",
+      "schema"
+    ],
+    "post_mortem_summary": "2847 products became unsearchable after sync failure. Input validation was added to catch type mismatches before indexing.",
+    "time_to_resolve_mins": 29,
+    "incident_id": "INC-4203"
+  },
+  {
+    "id": "SESS-002",
+    "service_name": "session-store",
+    "alert_text": "WARN Redis cluster node failure detected. Node redis-cluster-03 unreachable. Cluster state: FAIL. Slots affected: 5461-10922",
+    "root_cause": "Kernel update on redis-cluster-03 host triggered unexpected reboot without draining Redis cluster node, causing slot ownership gap in the cluster.",
+    "resolution_steps": [
+      "Forced cluster failover to promote replica of redis-cluster-03 as new primary",
+      "Verified cluster slot coverage restored to 100% using CLUSTER INFO",
+      "Implemented pre-reboot drain script for Redis cluster nodes in maintenance playbook"
+    ],
+    "severity": "HIGH",
+    "timestamp": "2025-02-04T01:22:48Z",
+    "tags": [
+      "redis",
+      "cluster",
+      "failover",
+      "maintenance"
+    ],
+    "post_mortem_summary": "One-third of user sessions became inaccessible during Redis node outage. Maintenance procedures now require cluster-aware node draining before host operations.",
+    "time_to_resolve_mins": 18,
+    "incident_id": "INC-7506"
+  },
+  {
+    "id": "NOTIF-002",
+    "service_name": "notification-worker",
+    "alert_text": "ERROR SMTPConnectionPool - Connection refused to smtp-relay.internal:587. Consecutive failures: 847",
+    "root_cause": "Internal SMTP relay crashed due to malformed email with 50MB attachment that exhausted relay memory, taking down the shared email infrastructure.",
+    "resolution_steps": [
+      "Restarted SMTP relay service with increased memory limit from 2GB to 4GB",
+      "Added 10MB attachment size limit validation in notification-worker before SMTP submission",
+      "Implemented SMTP health check with automatic failover to backup relay endpoint"
+    ],
+    "severity": "MEDIUM",
+    "timestamp": "2025-02-11T14:38:05Z",
+    "tags": [
+      "email",
+      "smtp",
+      "notification",
+      "infrastructure"
+    ],
+    "post_mortem_summary": "All email notifications were blocked for 90 minutes while SMTP relay was down. Input validation and relay redundancy were added.",
+    "time_to_resolve_mins": 90,
+    "incident_id": "INC-7124"
+  },
+  {
+    "id": "GW-004",
+    "service_name": "api-gateway",
+    "alert_text": "ERROR HealthCheck - 5 consecutive health check failures for service: order-service. Removing from load balancer pool",
+    "root_cause": "Order-service health endpoint performed a deep database connectivity check that started failing when database connection pool was saturated during peak traffic.",
+    "resolution_steps": [
+      "Changed order-service health endpoint to shallow check (process alive + port listening)",
+      "Created separate /ready endpoint for deep dependency checks used only by deployment system",
+      "Tuned health check intervals from 5s to 10s with failure threshold increased from 3 to 5"
+    ],
+    "severity": "MEDIUM",
+    "timestamp": "2025-02-18T19:11:33Z",
+    "tags": [
+      "gateway",
+      "health-check",
+      "load-balancer",
+      "availability"
+    ],
+    "post_mortem_summary": "Order-service was incorrectly removed from load balancer pool despite being functional. Health check strategy was revised to separate liveness from readiness.",
+    "time_to_resolve_mins": 25,
+    "incident_id": "INC-2873"
+  },
+  {
+    "id": "AUTH-003",
+    "service_name": "auth-service",
+    "alert_text": "CRITICAL Brute force detection triggered. Failed login attempts: 48,000 in 5 minutes from 1,200 unique IPs",
+    "root_cause": "Credential stuffing attack using compromised credential lists targeted the /auth/login endpoint, bypassing IP-based rate limiting through distributed botnet.",
+    "resolution_steps": [
+      "Enabled CAPTCHA challenge after 3 failed attempts per account",
+      "Deployed WAF rule to block credential stuffing patterns based on request fingerprinting",
+      "Implemented account lockout with exponential backoff: 1min, 5min, 15min, 1hour"
+    ],
+    "severity": "HIGH",
+    "timestamp": "2025-02-25T03:44:19Z",
+    "tags": [
+      "security",
+      "brute-force",
+      "auth",
+      "waf"
+    ],
+    "post_mortem_summary": "Distributed credential stuffing attack caused elevated auth-service load and some legitimate user lockouts. Multi-layered bot detection was deployed.",
+    "time_to_resolve_mins": 52,
+    "incident_id": "INC-9541"
+  },
+  {
+    "id": "PAY-003",
+    "service_name": "payments-api",
+    "alert_text": "ERROR CurrencyConversionService - Stale exchange rates detected. Last update: 26 hours ago. Threshold: 1 hour",
+    "root_cause": "Exchange rate provider API changed authentication scheme from API key header to OAuth2 bearer token, causing silent 401 failures on rate refresh.",
+    "resolution_steps": [
+      "Updated currency service client to use OAuth2 bearer token authentication",
+      "Added exchange rate staleness alert with 2-hour threshold",
+      "Implemented fallback to secondary exchange rate provider when primary fails"
+    ],
+    "severity": "MEDIUM",
+    "timestamp": "2025-03-04T12:27:41Z",
+    "tags": [
+      "payments",
+      "currency",
+      "api-integration",
+      "auth"
+    ],
+    "post_mortem_summary": "International transactions used stale exchange rates for 26 hours causing financial discrepancies. Provider failover and staleness monitoring were added.",
+    "time_to_resolve_mins": 34,
+    "incident_id": "INC-9514"
+  },
+  {
+    "id": "SRCH-003",
+    "service_name": "search-service",
+    "alert_text": "ERROR SearchIndexRebuilder - Index rebuild failed at 67%. Elasticsearch disk watermark exceeded on data-node-02",
+    "root_cause": "Index rebuild process required 2x storage for the new index alongside the old one, but data-node-02 only had 15% free space which was insufficient.",
+    "resolution_steps": [
+      "Expanded data-node-02 EBS volume from 500GB to 1TB",
+      "Implemented rolling index rebuild that swaps aliases instead of rebuilding in-place",
+      "Added pre-rebuild storage check that validates 2.5x current index size is available"
+    ],
+    "severity": "HIGH",
+    "timestamp": "2025-03-11T21:53:08Z",
+    "tags": [
+      "search",
+      "elasticsearch",
+      "disk",
+      "indexing"
+    ],
+    "post_mortem_summary": "Search index rebuild failed mid-process leaving search results stale for 12 hours. Storage pre-checks and alias-based rebuild strategy were implemented.",
+    "time_to_resolve_mins": 45,
+    "incident_id": "INC-9860"
+  },
+  {
+    "id": "ORD-003",
+    "service_name": "order-service",
+    "alert_text": "ERROR InventoryReservationTimeout - Failed to reserve inventory for 127 orders. Timeout after 30s waiting for inventory-db response",
+    "root_cause": "Long-running analytics query on inventory-db primary acquired a table-level lock that blocked all inventory reservation writes for 4 minutes.",
+    "resolution_steps": [
+      "Killed blocking analytics query using pg_terminate_backend",
+      "Moved analytics workload to read replica with statement_timeout set to 60s",
+      "Added statement_timeout of 10s on inventory-db primary for non-superuser connections"
+    ],
+    "severity": "HIGH",
+    "timestamp": "2025-03-18T16:08:55Z",
+    "tags": [
+      "orders",
+      "inventory",
+      "database",
+      "locking",
+      "timeout"
+    ],
+    "post_mortem_summary": "127 orders failed during inventory reservation timeout caused by analytics query locking. Workload isolation and query timeouts were enforced.",
+    "time_to_resolve_mins": 12,
+    "incident_id": "INC-7253"
+  },
+  {
+    "id": "REC-003",
+    "service_name": "recommendation-engine",
+    "alert_text": "WARN Model serving latency degraded. p95: 890ms (baseline: 45ms). Model: product-similarity-v3. GPU utilization: 12%",
+    "root_cause": "Model binary was loaded from NFS mount instead of local SSD after pod rescheduling, causing 20x inference latency due to network storage I/O.",
+    "resolution_steps": [
+      "Added initContainer to copy model binary from NFS to local SSD emptyDir volume on pod start",
+      "Configured model serving to read from /models/local with NFS as fallback only",
+      "Added model load time metric and alert when load exceeds 5 seconds"
+    ],
+    "severity": "LOW",
+    "timestamp": "2025-03-25T08:19:44Z",
+    "tags": [
+      "recommendations",
+      "ml",
+      "latency",
+      "storage",
+      "gpu"
+    ],
+    "post_mortem_summary": "Recommendation latency spiked 20x after pod rescheduling due to NFS model loading. Local SSD caching of model binaries was implemented.",
+    "time_to_resolve_mins": 6,
+    "incident_id": "INC-2151"
+  }
+]

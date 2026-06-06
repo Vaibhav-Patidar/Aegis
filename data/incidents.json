@@ -1,0 +1,462 @@
+[
+    {
+        "id": "INC-2026-0001",
+        "service_name": "payments-api",
+        "alert_text": "ERROR StripeChargeProcessor - Request timed out after 30000ms while creating charge. orderId=ORD-918273",
+        "root_cause": "Outbound firewall rule update blocked traffic from payments-api pods to Stripe API endpoints.",
+        "resolution_steps": [
+            "Verified timeout spikes in application metrics",
+            "Tested connectivity from affected pods",
+            "Rolled back firewall rule changes",
+            "Restarted impacted payment pods",
+            "Validated successful payment transactions"
+        ],
+        "time_to_resolve_mins": 47,
+        "severity": "CRITICAL",
+        "timestamp": "2026-05-12T09:14:22Z",
+        "tags": [
+            "payments",
+            "network",
+            "stripe",
+            "timeout"
+        ],
+        "post_mortem_summary": "Payment processing failed for approximately 18% of checkout attempts. Change management procedures were updated to require automated connectivity validation after firewall modifications."
+    },
+    {
+        "id": "INC-2026-0002",
+        "service_name": "auth-service",
+        "alert_text": "WARN JWTValidator - Token signature verification failed for issuer=[https://auth.internal",
+        "root_cause": "JWT](https://auth.internal%22,%22root_cause%22:%22JWT) signing key rotation completed in auth-service but api-gateway cache still contained the previous public key.",
+        "resolution_steps": [
+            "Reviewed authentication error logs",
+            "Compared active and cached signing keys",
+            "Forced api-gateway key cache refresh",
+            "Validated token issuance and verification",
+            "Monitored authentication success rates"
+        ],
+        "time_to_resolve_mins": 23,
+        "severity": "HIGH",
+        "timestamp": "2026-05-13T14:32:11Z",
+        "tags": [
+            "authentication",
+            "jwt",
+            "cache",
+            "security"
+        ],
+        "post_mortem_summary": "Users experienced intermittent login failures immediately after key rotation. A synchronized key propagation workflow was implemented to prevent cache inconsistency."
+    },
+    {
+        "id": "INC-2026-0003",
+        "service_name": "product-catalog",
+        "alert_text": "ERROR CatalogIndexer - java.lang.OutOfMemoryError: Java heap space",
+        "root_cause": "Bulk product import generated oversized indexing batches that exceeded configured JVM heap limits.",
+        "resolution_steps": [
+            "Paused import jobs",
+            "Captured heap dump for analysis",
+            "Reduced indexing batch size",
+            "Increased JVM heap allocation",
+            "Resumed catalog synchronization"
+        ],
+        "time_to_resolve_mins": 62,
+        "severity": "HIGH",
+        "timestamp": "2026-05-15T02:11:45Z",
+        "tags": [
+            "catalog",
+            "memory",
+            "indexing",
+            "java"
+        ],
+        "post_mortem_summary": "Product updates stopped propagating to the storefront during the incident. Batch-size validation and memory monitoring thresholds were added."
+    },
+    {
+        "id": "INC-2026-0004",
+        "service_name": "inventory-db",
+        "alert_text": "FATAL: remaining connection slots are reserved for superuser connections",
+        "root_cause": "Connection pool leak in inventory synchronization worker exhausted PostgreSQL connection limits.",
+        "resolution_steps": [
+            "Identified abnormal connection growth",
+            "Restarted leaking worker processes",
+            "Terminated idle database sessions",
+            "Patched connection pool handling logic",
+            "Validated pool utilization metrics"
+        ],
+        "time_to_resolve_mins": 39,
+        "severity": "CRITICAL",
+        "timestamp": "2026-05-16T18:07:33Z",
+        "tags": [
+            "database",
+            "postgresql",
+            "connections",
+            "inventory"
+        ],
+        "post_mortem_summary": "Inventory lookups failed and checkout stock validation degraded. Automated alerts for connection pool anomalies were introduced."
+    },
+    {
+        "id": "INC-2026-0005",
+        "service_name": "notification-worker",
+        "alert_text": "ERROR EmailDispatcher - RabbitMQ consumer lag exceeded threshold. queueDepth=128945",
+        "root_cause": "SMTP provider rate limits caused message retries to accumulate faster than consumers could process them.",
+        "resolution_steps": [
+            "Reviewed queue backlog metrics",
+            "Enabled temporary consumer scaling",
+            "Reduced retry frequency",
+            "Coordinated with SMTP provider",
+            "Drained message backlog"
+        ],
+        "time_to_resolve_mins": 88,
+        "severity": "MEDIUM",
+        "timestamp": "2026-05-18T10:25:58Z",
+        "tags": [
+            "notifications",
+            "rabbitmq",
+            "email",
+            "rate-limit"
+        ],
+        "post_mortem_summary": "Order confirmation emails were delayed but not lost. Retry policies were adjusted to better handle external provider throttling."
+    },
+    {
+        "id": "INC-2026-0006",
+        "service_name": "api-gateway",
+        "alert_text": "502 Bad Gateway - upstream connect error or disconnect/reset before headers",
+        "root_cause": "Kubernetes readiness probe misconfiguration routed traffic to uninitialized backend pods.",
+        "resolution_steps": [
+            "Reviewed deployment rollout events",
+            "Validated readiness probe failures",
+            "Updated readiness probe configuration",
+            "Redeployed gateway and backend services",
+            "Confirmed stable request routing"
+        ],
+        "time_to_resolve_mins": 31,
+        "severity": "HIGH",
+        "timestamp": "2026-05-19T16:43:27Z",
+        "tags": [
+            "gateway",
+            "kubernetes",
+            "deployment",
+            "502"
+        ],
+        "post_mortem_summary": "Customers experienced elevated API errors during deployment. Deployment validation now includes readiness probe verification."
+    },
+    {
+        "id": "INC-2026-0007",
+        "service_name": "search-service",
+        "alert_text": "ERROR ElasticsearchClient - shard allocation failed due to disk watermark exceeded",
+        "root_cause": "Search cluster node storage reached high watermark, preventing shard allocation.",
+        "resolution_steps": [
+            "Identified storage utilization spike",
+            "Removed obsolete indices",
+            "Expanded storage volume",
+            "Triggered shard rebalancing",
+            "Validated search response latency"
+        ],
+        "time_to_resolve_mins": 74,
+        "severity": "HIGH",
+        "timestamp": "2026-05-21T04:19:12Z",
+        "tags": [
+            "search",
+            "elasticsearch",
+            "storage",
+            "shards"
+        ],
+        "post_mortem_summary": "Search performance degraded and some queries returned incomplete results. Capacity planning thresholds were revised."
+    },
+    {
+        "id": "INC-2026-0008",
+        "service_name": "recommendation-engine",
+        "alert_text": "ERROR FeatureLoader - Redis connection refused at redis://feature-store:6379",
+        "root_cause": "Feature store Redis cluster failed after an unsuccessful node upgrade.",
+        "resolution_steps": [
+            "Verified Redis cluster health",
+            "Rolled back upgrade changes",
+            "Restored failed node",
+            "Rebuilt replication state",
+            "Validated recommendation generation"
+        ],
+        "time_to_resolve_mins": 55,
+        "severity": "HIGH",
+        "timestamp": "2026-05-22T12:57:41Z",
+        "tags": [
+            "recommendations",
+            "redis",
+            "upgrade",
+            "feature-store"
+        ],
+        "post_mortem_summary": "Personalized recommendations were unavailable during the outage. Upgrade procedures now require staged validation in production."
+    },
+    {
+        "id": "INC-2026-0009",
+        "service_name": "payments-api",
+        "alert_text": "ERROR FraudCheckClient - HTTP 429 Too Many Requests from fraud-scoring provider",
+        "root_cause": "Traffic surge exceeded contracted API rate limits for external fraud detection service.",
+        "resolution_steps": [
+            "Reviewed provider rate limit metrics",
+            "Enabled local fallback scoring rules",
+            "Requested temporary rate limit increase",
+            "Queued non-critical checks",
+            "Monitored approval success rates"
+        ],
+        "time_to_resolve_mins": 41,
+        "severity": "MEDIUM",
+        "timestamp": "2026-05-24T20:16:09Z",
+        "tags": [
+            "payments",
+            "fraud",
+            "rate-limit",
+            "external-api"
+        ],
+        "post_mortem_summary": "Some payment authorizations experienced delays. The platform added adaptive throttling and fallback decision logic."
+    },
+    {
+        "id": "INC-2026-0010",
+        "service_name": "auth-service",
+        "alert_text": "ERROR UserSessionRepository - Deadlock detected while updating session records",
+        "root_cause": "Recent schema migration introduced an index causing lock contention on session updates.",
+        "resolution_steps": [
+            "Analyzed deadlock reports",
+            "Identified conflicting queries",
+            "Dropped problematic index",
+            "Rebuilt optimized index strategy",
+            "Validated session write throughput"
+        ],
+        "time_to_resolve_mins": 66,
+        "severity": "HIGH",
+        "timestamp": "2026-05-25T07:04:54Z",
+        "tags": [
+            "auth",
+            "database",
+            "deadlock",
+            "migration"
+        ],
+        "post_mortem_summary": "Session creation latency increased significantly during peak traffic. Database migration reviews were expanded to include lock analysis."
+    },
+    {
+        "id": "INC-2026-0011",
+        "service_name": "inventory-db",
+        "alert_text": "ERROR ReplicaMonitor - replication lag exceeded 1800 seconds",
+        "root_cause": "Long-running reporting query saturated I/O on the primary database node.",
+        "resolution_steps": [
+            "Identified blocking query",
+            "Terminated reporting workload",
+            "Allowed replica catch-up",
+            "Moved report processing to dedicated replica",
+            "Verified replication health"
+        ],
+        "time_to_resolve_mins": 52,
+        "severity": "HIGH",
+        "timestamp": "2026-05-26T11:38:20Z",
+        "tags": [
+            "inventory",
+            "replication",
+            "database",
+            "performance"
+        ],
+        "post_mortem_summary": "Inventory data became stale across dependent services. Resource isolation was implemented for analytical workloads."
+    },
+    {
+        "id": "INC-2026-0012",
+        "service_name": "notification-worker",
+        "alert_text": "ERROR PushNotificationSender - Invalid APNS certificate detected",
+        "root_cause": "Expired Apple Push Notification certificate was not renewed before expiration.",
+        "resolution_steps": [
+            "Confirmed certificate expiration",
+            "Generated replacement certificate",
+            "Updated secret store",
+            "Restarted notification workers",
+            "Validated push delivery success"
+        ],
+        "time_to_resolve_mins": 28,
+        "severity": "MEDIUM",
+        "timestamp": "2026-05-27T15:49:36Z",
+        "tags": [
+            "notifications",
+            "apns",
+            "certificate",
+            "mobile"
+        ],
+        "post_mortem_summary": "Mobile push notifications failed for affected users. Certificate expiration monitoring was added to operational dashboards."
+    },
+    {
+        "id": "INC-2026-0013",
+        "service_name": "api-gateway",
+        "alert_text": "ERROR RateLimiter - Redis timeout while evaluating request quotas",
+        "root_cause": "Redis cluster CPU saturation increased latency beyond gateway timeout thresholds.",
+        "resolution_steps": [
+            "Reviewed Redis resource utilization",
+            "Scaled Redis cluster nodes",
+            "Cleared hot key contention",
+            "Adjusted timeout configuration",
+            "Validated rate limiting behavior"
+        ],
+        "time_to_resolve_mins": 44,
+        "severity": "HIGH",
+        "timestamp": "2026-05-28T13:22:17Z",
+        "tags": [
+            "gateway",
+            "redis",
+            "rate-limiter",
+            "latency"
+        ],
+        "post_mortem_summary": "Request processing latency increased across public APIs. Traffic distribution logic was improved to reduce hot key pressure."
+    },
+    {
+        "id": "INC-2026-0014",
+        "service_name": "search-service",
+        "alert_text": "WARN QueryExecutor - Search latency exceeded SLA. p95=4100ms",
+        "root_cause": "New synonym expansion rules generated excessively complex Elasticsearch queries.",
+        "resolution_steps": [
+            "Reviewed recent search configuration changes",
+            "Disabled problematic synonym set",
+            "Reindexed affected terms",
+            "Measured query performance improvements",
+            "Released optimized search configuration"
+        ],
+        "time_to_resolve_mins": 36,
+        "severity": "MEDIUM",
+        "timestamp": "2026-05-29T08:11:05Z",
+        "tags": [
+            "search",
+            "latency",
+            "configuration",
+            "elasticsearch"
+        ],
+        "post_mortem_summary": "Customers experienced slow product searches. Search relevance updates now undergo performance benchmarking before deployment."
+    },
+    {
+        "id": "INC-2026-0015",
+        "service_name": "product-catalog",
+        "alert_text": "ERROR ProductSyncJob - Foreign key constraint violation on category mapping",
+        "root_cause": "Partial category import completed before dependent product records were synchronized.",
+        "resolution_steps": [
+            "Paused synchronization jobs",
+            "Restored missing category records",
+            "Reprocessed failed imports",
+            "Added dependency validation checks",
+            "Verified catalog consistency"
+        ],
+        "time_to_resolve_mins": 58,
+        "severity": "MEDIUM",
+        "timestamp": "2026-05-30T01:46:42Z",
+        "tags": [
+            "catalog",
+            "data-integrity",
+            "imports",
+            "sync"
+        ],
+        "post_mortem_summary": "Several products disappeared from category listings temporarily. Import sequencing controls were strengthened."
+    },
+    {
+        "id": "INC-2026-0016",
+        "service_name": "recommendation-engine",
+        "alert_text": "ERROR ModelInferenceService - feature vector dimension mismatch expected=512 actual=508",
+        "root_cause": "Feature engineering deployment introduced schema changes without updating production model metadata.",
+        "resolution_steps": [
+            "Reviewed feature schema changes",
+            "Rolled back feature deployment",
+            "Reloaded model metadata",
+            "Validated inference outputs",
+            "Added schema compatibility checks"
+        ],
+        "time_to_resolve_mins": 49,
+        "severity": "HIGH",
+        "timestamp": "2026-05-31T17:08:29Z",
+        "tags": [
+            "recommendations",
+            "ml",
+            "schema",
+            "inference"
+        ],
+        "post_mortem_summary": "Recommendation quality degraded and some requests failed. Model deployment pipelines now enforce feature schema validation."
+    },
+    {
+        "id": "INC-2026-0017",
+        "service_name": "payments-api",
+        "alert_text": "ERROR DatabaseTransactionManager - transaction rollback due to serialization failure",
+        "root_cause": "Concurrent order updates exceeded database transaction isolation handling capacity during flash sale traffic.",
+        "resolution_steps": [
+            "Analyzed transaction conflict metrics",
+            "Implemented retry logic",
+            "Reduced transaction scope",
+            "Scaled database resources",
+            "Validated checkout success rates"
+        ],
+        "time_to_resolve_mins": 71,
+        "severity": "HIGH",
+        "timestamp": "2026-06-01T19:57:51Z",
+        "tags": [
+            "payments",
+            "database",
+            "transactions",
+            "flash-sale"
+        ],
+        "post_mortem_summary": "Checkout failures increased during peak demand. Transaction retry mechanisms reduced user-facing impact in future events."
+    },
+    {
+        "id": "INC-2026-0018",
+        "service_name": "auth-service",
+        "alert_text": "ERROR LDAPConnector - unable to establish TLS handshake with identity provider",
+        "root_cause": "Intermediate CA certificate was missing from the trust store after container image update.",
+        "resolution_steps": [
+            "Compared trust store contents",
+            "Imported missing CA certificate",
+            "Rebuilt container image",
+            "Redeployed authentication service",
+            "Validated identity provider connectivity"
+        ],
+        "time_to_resolve_mins": 34,
+        "severity": "HIGH",
+        "timestamp": "2026-06-02T06:35:18Z",
+        "tags": [
+            "auth",
+            "tls",
+            "certificate",
+            "identity-provider"
+        ],
+        "post_mortem_summary": "Enterprise users could not authenticate through federated login. Trust store validation was added to image build checks."
+    },
+    {
+        "id": "INC-2026-0019",
+        "service_name": "inventory-db",
+        "alert_text": "ERROR WALArchiver - archive command failed with exit code 1",
+        "root_cause": "Backup storage bucket permissions were removed during infrastructure policy update.",
+        "resolution_steps": [
+            "Verified archive command failures",
+            "Restored bucket permissions",
+            "Retried WAL archival process",
+            "Confirmed backup integrity",
+            "Audited IAM policy changes"
+        ],
+        "time_to_resolve_mins": 46,
+        "severity": "CRITICAL",
+        "timestamp": "2026-06-03T22:41:07Z",
+        "tags": [
+            "inventory",
+            "backup",
+            "wal",
+            "storage"
+        ],
+        "post_mortem_summary": "Database recovery point objectives were temporarily at risk. Infrastructure permission changes now require automated backup validation."
+    },
+    {
+        "id": "INC-2026-0020",
+        "service_name": "api-gateway",
+        "alert_text": "ERROR CircuitBreaker - open state triggered for upstream service product-catalog",
+        "root_cause": "Product-catalog deployment introduced N+1 database query pattern causing request timeouts.",
+        "resolution_steps": [
+            "Identified latency regression",
+            "Rolled back catalog deployment",
+            "Optimized database query strategy",
+            "Redeployed fixed release",
+            "Validated gateway error rates"
+        ],
+        "time_to_resolve_mins": 64,
+        "severity": "CRITICAL",
+        "timestamp": "2026-06-04T14:28:53Z",
+        "tags": [
+            "gateway",
+            "catalog",
+            "timeouts",
+            "performance"
+        ],
+        "post_mortem_summary": "Product browsing and checkout flows experienced widespread degradation. Performance regression testing was expanded to detect query inefficiencies before release."
+    }
+]
