@@ -52,7 +52,6 @@ export default function Diagnose() {
   };
 
   useEffect(() => {
-    fetchHealth();
   }, []);
 
   useEffect(() => {
