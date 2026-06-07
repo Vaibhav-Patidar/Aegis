@@ -203,8 +203,8 @@ Transforms individual troubleshooting efforts into reusable institutional knowle
 
 ### Backend
 
-* Spring Boot
-* Java
+* FastApi
+* Python
 
 ### AI Layer
 
