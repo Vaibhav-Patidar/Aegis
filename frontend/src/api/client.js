@@ -48,8 +48,8 @@ function extractServiceFromAlert(alertText) {
 export function normalizeIncident(raw) {
   return {
     ...raw,
-    service_name: (!raw.service_name || raw.service_name === "unknown") 
-      ? extractServiceFromAlert(raw.alert_text) 
+    service_name: (!raw.service_name || raw.service_name === "unknown")
+      ? extractServiceFromAlert(raw.alert_text)
       : raw.service_name,
     display_id: raw.incident_id || ("INC-" + (raw.id ? raw.id.slice(0, 4).toUpperCase() : "0000")),
   };

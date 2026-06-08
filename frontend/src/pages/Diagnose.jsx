@@ -245,11 +245,10 @@ export default function Diagnose() {
                         className="flex gap-3 items-start"
                       >
                         <button
-                          className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors ${
-                            checkedSteps[idx]
-                              ? "bg-primary border-primary"
-                              : "border-outline-variant hover:border-primary"
-                          }`}
+                          className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors ${checkedSteps[idx]
+                            ? "bg-primary border-primary"
+                            : "border-outline-variant hover:border-primary"
+                            }`}
                           onClick={() =>
                             setCheckedSteps((prev) => ({
                               ...prev,
@@ -271,11 +270,10 @@ export default function Diagnose() {
                                 {String(idx + 1).padStart(2, "0")}
                               </span>
                               <span
-                                className={`text-body-base font-inter ${
-                                  checkedSteps[idx]
-                                    ? "text-on-surface-variant line-through"
-                                    : "text-on-surface"
-                                }`}
+                                className={`text-body-base font-inter ${checkedSteps[idx]
+                                  ? "text-on-surface-variant line-through"
+                                  : "text-on-surface"
+                                  }`}
                               >
                                 {cleanStep || step}
                               </span>
@@ -326,7 +324,7 @@ export default function Diagnose() {
                   const displayId = match.incident_id || ("INC-" + (match.id ? match.id.slice(0, 4).toUpperCase() : "0000"));
                   const serviceName = match.service_name || "platform-core";
                   const shortRC = (match.root_cause || "").slice(0, 55) + ((match.root_cause || "").length > 55 ? "..." : "");
-                  
+
                   return (
                     <div key={match.id} className="bg-background border border-outline-variant rounded p-3 flex flex-col gap-2">
                       <div className="flex items-center justify-between">
@@ -351,8 +349,8 @@ export default function Diagnose() {
                   {loading
                     ? "Searching memory..."
                     : result
-                    ? "No historical matches found"
-                    : "Submit an incident to find matches"}
+                      ? "No historical matches found"
+                      : "Submit an incident to find matches"}
                 </div>
               )}
               {result?.similar_incidents?.length > 3 && (
