@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { getIncidents, getStats, resolveIncident, getHealth } from "../api/client";
+import { getIncidents, getStats, resolveIncident, getHealth, normalizeIncident } from "../api/client";
 import { useToast } from "../App";
 import SeverityBadge from "../components/ui/SeverityBadge";
 import {
@@ -50,8 +50,9 @@ export default function Memory() {
 
   const fetchData = async () => {
     try {
-      const [inc, st] = await Promise.all([getIncidents(), getStats()]);
-      setIncidents(inc);
+      const [incResult, st] = await Promise.all([getIncidents(), getStats()]);
+      const normalized = (incResult.incidents || []).map(normalizeIncident);
+      setIncidents(normalized);
       setStats(st);
       setLoading(false);
     } catch (err) {

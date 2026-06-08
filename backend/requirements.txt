@@ -2,7 +2,11 @@ fastapi
 uvicorn[standard]
 pydantic
 pydantic-settings
-groq
 python-dotenv
-requests
 httpx
+groq
+supabase
+python-jose[cryptography]
+slowapi
+python-multipart
+email-validator

@@ -10,16 +10,38 @@ import {
 
 export default function Settings() {
   const addToast = useToast();
-  const [orgName, setOrgName] = useState("Acme Corp Infrastructure");
-  const [region, setRegion] = useState("us-east-1");
-  const [dataIsolation, setDataIsolation] = useState(true);
-  const [similarityThreshold, setSimilarityThreshold] = useState(0.85);
-  const [retrievalDepth, setRetrievalDepth] = useState("deep");
-  const [maxMatches, setMaxMatches] = useState(15);
-  const [retentionWindow, setRetentionWindow] = useState("90");
-  const [continuousLearning, setContinuousLearning] = useState(true);
+
+  const loadSettings = () => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("aegis_settings") || "{}");
+      return saved;
+    } catch {
+      return {};
+    }
+  };
+
+  const defaults = loadSettings();
+  const [orgName, setOrgName] = useState(defaults.orgName || "Acme Corp Infrastructure");
+  const [region, setRegion] = useState(defaults.region || "us-east-1");
+  const [dataIsolation, setDataIsolation] = useState(defaults.dataIsolation ?? true);
+  const [similarityThreshold, setSimilarityThreshold] = useState(defaults.similarityThreshold ?? 0.85);
+  const [retrievalDepth, setRetrievalDepth] = useState(defaults.retrievalDepth || "deep");
+  const [maxMatches, setMaxMatches] = useState(defaults.maxMatches ?? 15);
+  const [retentionWindow, setRetentionWindow] = useState(defaults.retentionWindow || "90");
+  const [continuousLearning, setContinuousLearning] = useState(defaults.continuousLearning ?? true);
 
   const handleSave = () => {
+    const settings = {
+      orgName,
+      region,
+      dataIsolation,
+      similarityThreshold,
+      retrievalDepth,
+      maxMatches,
+      retentionWindow,
+      continuousLearning,
+    };
+    localStorage.setItem("aegis_settings", JSON.stringify(settings));
     addToast("Settings saved", "success");
   };
 

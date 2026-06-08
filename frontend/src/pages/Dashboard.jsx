@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { getStats, getIncidents } from "../api/client";
+import { getStats, getIncidents, normalizeIncident } from "../api/client";
 import { useToast } from "../App";
 import SeverityBadge from "../components/ui/SeverityBadge";
 import StatusBadge from "../components/ui/StatusBadge";
@@ -65,12 +65,13 @@ export default function Dashboard() {
 
   const fetchData = async () => {
     try {
-      const [statsData, incidentsData] = await Promise.all([
+      const [statsData, incidentsResult] = await Promise.all([
         getStats(),
         getIncidents(),
       ]);
       setStats(statsData);
-      setIncidents(incidentsData);
+      const normalized = (incidentsResult.incidents || []).map(normalizeIncident);
+      setIncidents(normalized);
       setLoading(false);
     } catch (err) {
       addToast(err.message, "error");

@@ -1,4 +1,5 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
+import { useAuth } from "../../contexts/AuthContext";
 import {
   LayoutDashboard,
   Search,
@@ -10,6 +11,7 @@ import {
   Settings,
   CheckCircle,
   Sparkles,
+  LogOut,
 } from "lucide-react";
 
 const navItems = [
@@ -23,6 +25,14 @@ const navItems = [
 ];
 
 export default function Sidebar() {
+  const { logout, user } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate("/login");
+  };
+
   return (
     <aside className="w-sidebar-width h-screen fixed left-0 top-0 bg-surface-container-low border-r border-outline-variant flex flex-col z-50">
       <div className="px-gutter py-stack-large border-b border-outline-variant flex items-center gap-3">
@@ -84,6 +94,13 @@ export default function Sidebar() {
           <Sparkles size={16} className="text-primary" />
           <span className="text-primary">Memory Connected</span>
         </div>
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-3 px-4 py-2 text-on-surface-variant text-body-sm font-inter hover:text-error transition-colors w-full border-l-[3px] border-transparent"
+        >
+          <LogOut size={16} />
+          Sign Out
+        </button>
       </div>
     </aside>
   );

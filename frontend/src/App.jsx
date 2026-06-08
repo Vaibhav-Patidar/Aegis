@@ -1,7 +1,12 @@
 import { useState, useEffect, useCallback, createContext, useContext } from "react";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, useLocation } from "react-router-dom";
+import { AuthProvider } from "./contexts/AuthContext";
+import ProtectedRoute from "./components/ProtectedRoute";
 import Sidebar from "./components/layout/Sidebar";
 import TopBar from "./components/layout/TopBar";
+import LandingPage from "./pages/LandingPage";
+import LoginPage from "./pages/LoginPage";
+import SignupPage from "./pages/SignupPage";
 import Dashboard from "./pages/Dashboard";
 import Diagnose from "./pages/Diagnose";
 import Memory from "./pages/Memory";
@@ -43,6 +48,46 @@ function Toast({ message, type, onClose }) {
   );
 }
 
+// Paths that don't need sidebar/topbar
+const PUBLIC_PATHS = ["/landing", "/login", "/signup"];
+
+function AppLayout() {
+  const location = useLocation();
+  const isPublic = PUBLIC_PATHS.includes(location.pathname);
+
+  if (isPublic) {
+    return (
+      <Routes>
+        <Route path="/landing" element={<LandingPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+      </Routes>
+    );
+  }
+
+  return (
+    <div className="flex min-h-screen bg-background">
+      <Sidebar />
+      <div className="flex-1 ml-sidebar-width flex flex-col min-h-screen">
+        <TopBar />
+        <main className="flex-1 p-container-padding bg-background">
+          <Routes>
+            <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/diagnose" element={<ProtectedRoute><Diagnose /></ProtectedRoute>} />
+            <Route path="/memory" element={<ProtectedRoute><Memory /></ProtectedRoute>} />
+            <Route path="/runbooks" element={<ProtectedRoute><Runbooks /></ProtectedRoute>} />
+            <Route path="/logs" element={<ProtectedRoute><Logs /></ProtectedRoute>} />
+            <Route path="/command-center" element={<ProtectedRoute><CommandCenter /></ProtectedRoute>} />
+            <Route path="/architecture" element={<ProtectedRoute><Architecture /></ProtectedRoute>} />
+            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+            <Route path="/profile" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
+          </Routes>
+        </main>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [toasts, setToasts] = useState([]);
 
@@ -56,25 +101,9 @@ export default function App() {
   }, []);
 
   return (
-    <ToastContext.Provider value={addToast}>
-      <div className="flex min-h-screen bg-background">
-        <Sidebar />
-        <div className="flex-1 ml-sidebar-width flex flex-col min-h-screen">
-          <TopBar />
-          <main className="flex-1 p-container-padding bg-background">
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/diagnose" element={<Diagnose />} />
-              <Route path="/memory" element={<Memory />} />
-              <Route path="/runbooks" element={<Runbooks />} />
-              <Route path="/logs" element={<Logs />} />
-              <Route path="/command-center" element={<CommandCenter />} />
-              <Route path="/architecture" element={<Architecture />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/profile" element={<UserProfile />} />
-            </Routes>
-          </main>
-        </div>
+    <AuthProvider>
+      <ToastContext.Provider value={addToast}>
+        <AppLayout />
 
         <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
           {toasts.map((toast) => (
@@ -87,7 +116,7 @@ export default function App() {
             </div>
           ))}
         </div>
-      </div>
-    </ToastContext.Provider>
+      </ToastContext.Provider>
+    </AuthProvider>
   );
 }

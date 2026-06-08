@@ -1,5 +1,8 @@
 .DS_Store
 frontend/src/api/.env
+frontend/.env
+frontend/src/.env.*
 backend/.env
 .env
 .env.*
+stitch_aegis_organizational_memory_layer
