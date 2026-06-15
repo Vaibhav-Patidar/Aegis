@@ -1,6 +1,7 @@
 # Aegis
 
 An AI-powered production incident response platform that learns from past outages using Hindsight agent memory.
+Built for HackWithDelhi 3.0 hackathon
 
 ## Overview
 
